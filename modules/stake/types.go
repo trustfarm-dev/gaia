@@ -8,6 +8,7 @@ import (
 	"github.com/cosmos/cosmos-sdk"
 	"github.com/cosmos/cosmos-sdk/state"
 	abci "github.com/tendermint/abci/types"
+	crypto "github.com/tendermint/go-crypto"
 	cmn "github.com/tendermint/tmlibs/common"
 )
 
@@ -40,21 +41,23 @@ func defaultParams() Params {
 // delegated divided by the current exchange rate. Voting power can be calculated as
 // total bonds multiplied by exchange rate.
 type CandidateBond struct {
-	Sender       sdk.Actor // Sender of BondTx - UnbondTx returns here
-	PubKey       []byte    // Pubkey of validator
-	Tickets uint64    // Total number of bond tickets for the validator
-	HoldAccount  sdk.Actor // Account where the bonded coins are held. Controlled by the app
-	VotingPower  uint64    // Total number of bond tickets for the validator
+	Candidate   crypto.PubKey // Pubkey of validator
+	Owner       sdk.Actor     // Sender of BondTx - UnbondTx returns here
+	Tickets     uint64        // Total number of bond tickets for the validator
+	HoldCoin    uint64        // Account where the bonded coins are held. Controlled by the app
+	HoldAccount sdk.Actor     // Account where the bonded coins are held. Controlled by the app
+	VotingPower uint64        // Total number of bond tickets for the validator
 }
 
 // NewCandidateBond - returns a new empty validator bond object
-func NewCandidateBond(sender, holder sdk.Actor, pubKey []byte) *CandidateBond {
+func NewCandidateBond(owner, holder sdk.Actor, candidate crypto.PubKey) *CandidateBond {
 	return &CandidateBond{
-		Sender:       sender,
-		PubKey:       pubKey,
-		Tickets: 0,
-		HoldAccount:  holder,
-		VotingPower:  0,
+		Owner:       owner,
+		Candidate:   candidate,
+		Tickets:     0,
+		HoldCoin:    0,
+		HoldAccount: holder,
+		VotingPower: 0,
 	}
 }
 
@@ -97,7 +100,7 @@ func (vbs CandidateBonds) Sort() {
 }
 
 // UpdateVotingPower - voting power based on bond tickets and exchange rate
-// TODO make not a function of CandidateBonds as validatorbonds can be loaded from the store
+// TODO make not a function of CandidateBonds as CandidateBonds can be loaded from the store
 func (vbs CandidateBonds) UpdateVotingPower(store state.SimpleDB) {
 
 	for _, vb := range vbs {
@@ -234,5 +237,41 @@ func (vbs CandidateBonds) Remove(i int) (CandidateBonds, error) {
 		return vbs, fmt.Errorf("Element is out of upper bound")
 	default:
 		return append(vbs[:i], vbs[i+1:]...), nil
+	}
+}
+
+//--------------------------------------------------------------------------------
+
+// DelegatorBond represents some bond tokens held by an account.
+// It is owned by one delegator, and is associated with the voting power of one candidate.
+type DelegatorBond struct {
+	Candidate crypto.PubKey
+	Tickets   uint64
+}
+
+// DelegatorBonds - all delegator bonds existing with multiple delegatees
+type DelegatorBonds []*DelegatorBond
+
+// Get - get a DelegateeBond for a specific validator from the DelegateeBonds
+func (b DelegatorBonds) Get(candidate sdk.Actor) (int, *DelegatorBond) {
+	for i, bv := range b {
+		if bytes.Equal(bv.Candidate.Address, candidate.Address) &&
+			bv.Candidate.ChainID == candidate.ChainID &&
+			bv.Candidate.App == candidate.App {
+			return i, bv
+		}
+	}
+	return 0, nil
+}
+
+// Remove - remove candidate from the candidate list
+func (b DelegatorBonds) Remove(i int) (DelegatorBonds, error) {
+	switch {
+	case i < 0:
+		return b, fmt.Errorf("Cannot remove a negative element")
+	case i >= len(b):
+		return b, fmt.Errorf("Element is out of upper bound")
+	default:
+		return append(b[:i], b[i+1:]...), nil
 	}
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk"
 	"github.com/cosmos/cosmos-sdk/modules/coin"
+	crypto "github.com/tendermint/go-crypto"
 )
 
 // Tx
@@ -28,62 +29,53 @@ func init() {
 //Verify interface at compile time
 var _, _ sdk.TxInner = &TxBond{}, &TxUnbond{}
 
-/////////////////////////////////////////////////////////////////
-// TxBond
-
-// TxBond - struct for bonding transactions
-type TxBond struct {
-	Amount coin.Coin `json:"amount"`
-	PubKey []byte    `json:"pubkey"`
-}
-
-// NewTxBond - new TxBond
-func NewTxBond(amount coin.Coin, pubKey []byte) sdk.Tx {
-	return TxBond{
-		Amount: amount,
-		PubKey: pubKey,
-	}.Wrap()
+// BondUpdate - struct for bonding or unbonding transactions
+type BondUpdate struct {
+	Candidate crypto.PubKey `json:"candidate"`
+	Amount    coin.Coin     `json:"amount"`
 }
 
 // Wrap - Wrap a Tx as a Basecoin Tx
-func (tx TxBond) Wrap() sdk.Tx {
+func (tx BondUpdate) Wrap() sdk.Tx {
 	return sdk.Tx{tx}
 }
 
 // ValidateBasic - Check for non-empty actor, and valid coins
-func (tx TxBond) ValidateBasic() error {
-	return validateBasic(tx.Amount)
-}
+func (tx BondUpdate) ValidateBasic() error {
+	if len(tx.Candidate.Bytes()) == 0 { // TODO will an empty validator actually have len 0?
+		return errValidatorEmpty
+	}
 
-// TxUnbond - struct for unbonding transactions
-type TxUnbond struct {
-	Amount coin.Coin `json:"amount"`
-}
-
-// NewTxUnbond - new TxUnbond
-func NewTxUnbond(amount coin.Coin) sdk.Tx {
-	return TxUnbond{
-		Amount: amount,
-	}.Wrap()
-}
-
-// Wrap - Wrap a Tx as a Basecoin Tx
-func (tx TxUnbond) Wrap() sdk.Tx {
-	return sdk.Tx{tx}
-}
-
-// ValidateBasic - Check for non-empty actor, and valid coins
-func (tx TxUnbond) ValidateBasic() error {
-	return validateBasic(tx.Amount)
-}
-
-func validateBasic(amount coin.Coin) error {
-	coins := coin.Coins{amount}
+	coins := coin.Coins{tx.Amount}
 	if !coins.IsValid() {
 		return coin.ErrInvalidCoins()
 	}
 	if !coins.IsPositive() {
 		return fmt.Errorf("Amount must be > 0")
 	}
+	if coins[0].Denom != bondDenom {
+		return fmt.Errorf("Invalid coin denomination")
+	}
 	return nil
+}
+
+// TxBond - struct for bonding transactions
+type TxBond struct{ BondUpdate }
+
+// NewTxBond - new TxBond
+func NewTxBond(amount coin.Coin, pubKey []byte) sdk.Tx {
+	return TxBond{BondUpdate{
+		Amount: amount,
+		PubKey: pubKey,
+	}}.Wrap()
+}
+
+// TxUnbond - struct for unbonding transactions
+type TxUnbond struct{ BondUpdate }
+
+// NewTxUnbond - new TxUnbond
+func NewTxUnbond(amount coin.Coin) sdk.Tx {
+	return TxUnbond{
+		Amount: amount,
+	}.Wrap()
 }
