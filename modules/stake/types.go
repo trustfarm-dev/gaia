@@ -18,70 +18,79 @@ type Params struct {
 	AllowedBondDenom string `json:"allowed_bond_denom"` // bondable coin denomination
 
 	// gas costs for txs
-	GasBond   uint64 `json:"gas_bond"`
-	GasUnbond uint64 `json:"gas_unbond"`
+	GasDeclareCandidacy uint64 `json:"gas_declare_candidacy"`
+	GasBond             uint64 `json:"gas_bond"`
+	GasUnbond           uint64 `json:"gas_unbond"`
 }
 
 func defaultParams() Params {
 	return Params{
-		MaxVals:          100,
-		AllowedBondDenom: "fermion",
-		GasBond:          20,
-		GasUnbond:        0,
+		MaxVals:             100,
+		AllowedBondDenom:    "fermion",
+		GasDeclareCandidacy: 20,
+		GasBond:             20,
+		GasUnbond:           0, //TODO verify that it is safe to have gas of zero here
 	}
 }
 
 //--------------------------------------------------------------------------------
 
-// CandidateBond defines the total amount of bond tickets and their exchange rate to
+// Candidate defines the total amount of bond tickets and their exchange rate to
 // coins, associated with a single validator. Accumulation of interest is modelled
 // as an in increase in the exchange rate, and slashing as a decrease.
 // When coins are delegated to this validator, the validator is credited
 // with a DelegatorBond whose number of bond tickets is based on the amount of coins
 // delegated divided by the current exchange rate. Voting power can be calculated as
 // total bonds multiplied by exchange rate.
-type CandidateBond struct {
-	Candidate   crypto.PubKey // Pubkey of validator
+type Candidate struct {
+	PubKey      crypto.PubKey // Pubkey of validator
 	Owner       sdk.Actor     // Sender of BondTx - UnbondTx returns here
-	Tickets     uint64        // Total number of bond tickets for the validator
-	HoldCoin    uint64        // Account where the bonded coins are held. Controlled by the app
-	HoldAccount sdk.Actor     // Account where the bonded coins are held. Controlled by the app
-	VotingPower uint64        // Total number of bond tickets for the validator
+	Tickets     uint64        // Total number of bond tickets for the validator, equivalent to coins held in bond account
+	VotingPower uint64        // Voting power if pubKey is a considered a validator
 }
 
-// NewCandidateBond - returns a new empty validator bond object
-func NewCandidateBond(owner, holder sdk.Actor, candidate crypto.PubKey) *CandidateBond {
-	return &CandidateBond{
+// NewCandidate - returns a new empty validator bond object
+func NewCandidate(owner sdk.Actor, pubKey crypto.PubKey) *Candidate {
+	return &Candidate{
 		Owner:       owner,
-		Candidate:   candidate,
+		PubKey:      pubKey,
 		Tickets:     0,
-		HoldCoin:    0,
-		HoldAccount: holder,
 		VotingPower: 0,
 	}
 }
 
 // ABCIValidator - Get the validator from a bond value
-func (vb CandidateBond) ABCIValidator() *abci.Validator {
+func (cb Candidate) ABCIValidator() *abci.Validator {
 	return &abci.Validator{
-		PubKey: vb.PubKey,
-		Power:  vb.VotingPower,
+		PubKey: cb.PubKey,
+		Power:  cb.VotingPower,
 	}
+}
+
+// HoldAccount - Get the hold account for the Candidate
+func (cb Candidate) HoldAccount() sdk.Actor {
+	return HoldAccount(cd.Owner)
+}
+
+// HoldAccount - the account where bonded atoms are held only accessed by protocol
+func HoldAccount(owner sdk.Actor) sdk.Actor {
+	holdAddr := append([]byte{0x00}, owner.Address[1:]...) //shift and prepend a zero
+	return sdk.NewActor(stakingModuleName, holdAddr)
 }
 
 //--------------------------------------------------------------------------------
 
-// CandidateBonds - the set of all CandidateBonds
-type CandidateBonds []*CandidateBond
+// Candidates - the set of all Candidates
+type Candidates []*Candidate
 
-var _ sort.Interface = CandidateBonds{} //enforce the sort interface at compile time
+var _ sort.Interface = Candidates{} //enforce the sort interface at compile time
 
 // nolint - sort interface functions
-func (vbs CandidateBonds) Len() int      { return len(vbs) }
-func (vbs CandidateBonds) Swap(i, j int) { vbs[i], vbs[j] = vbs[j], vbs[i] }
-func (vbs CandidateBonds) Less(i, j int) bool {
-	vp1, vp2 := vbs[i].VotingPower, vbs[j].VotingPower
-	d1, d2 := vbs[i].Sender, vbs[j].Sender
+func (cbs Candidates) Len() int      { return len(cbs) }
+func (cbs Candidates) Swap(i, j int) { cbs[i], cbs[j] = cbs[j], cbs[i] }
+func (cbs Candidates) Less(i, j int) bool {
+	vp1, vp2 := cbs[i].VotingPower, cbs[j].VotingPower
+	d1, d2 := cbs[i].Sender, cbs[j].Sender
 	switch {
 	case vp1 != vp2:
 		return vp1 > vp2
@@ -95,58 +104,58 @@ func (vbs CandidateBonds) Less(i, j int) bool {
 }
 
 // Sort - Sort the array of bonded values
-func (vbs CandidateBonds) Sort() {
-	sort.Sort(vbs)
+func (cbs Candidates) Sort() {
+	sort.Sort(cbs)
 }
 
 // UpdateVotingPower - voting power based on bond tickets and exchange rate
-// TODO make not a function of CandidateBonds as CandidateBonds can be loaded from the store
-func (vbs CandidateBonds) UpdateVotingPower(store state.SimpleDB) {
+// TODO make not a function of Candidates as Candidates can be loaded from the store
+func (cbs Candidates) UpdateVotingPower(store state.SimpleDB) {
 
-	for _, vb := range vbs {
-		vb.VotingPower = vb.Tickets
+	for _, cb := range cbs {
+		cb.VotingPower = cb.Tickets
 	}
 
 	// Now sort and truncate the power
-	vbs.Sort()
-	for i, vb := range vbs {
+	cbs.Sort()
+	for i, cb := range cbs {
 		if i >= loadParams(store).MaxVals {
-			vb.VotingPower = 0
+			cb.VotingPower = 0
 		}
 	}
-	saveBonds(store, vbs)
+	saveBonds(store, cbs)
 	return
 }
 
 // CleanupEmpty - removes all validators which have no bonded atoms left
-func (vbs CandidateBonds) CleanupEmpty(store state.SimpleDB) {
-	for i, vb := range vbs {
-		if vb.Tickets == 0 {
+func (cbs Candidates) CleanupEmpty(store state.SimpleDB) {
+	for i, cb := range cbs {
+		if cb.Tickets == 0 {
 			var err error
-			vbs, err = vbs.Remove(i)
+			cbs, err = cbs.Remove(i)
 			if err != nil {
 				cmn.PanicSanity(resBadRemoveValidator.Error())
 			}
 		}
 	}
-	saveBonds(store, vbs)
+	saveBonds(store, cbs)
 }
 
 // GetValidators - get the most recent updated validator set from the
-// CandidateBonds. These bonds are already sorted by VotingPower from
+// Candidates. These bonds are already sorted by VotingPower from
 // the UpdateVotingPower function which is the only function which
 // is to modify the VotingPower
-func (vbs CandidateBonds) GetValidators(store state.SimpleDB) []*abci.Validator {
+func (cbs Candidates) GetValidators(store state.SimpleDB) []*abci.Validator {
 	maxVals := loadParams(store).MaxVals
-	validators := make([]*abci.Validator, cmn.MinInt(len(vbs), maxVals))
-	for i, vb := range vbs {
-		if vb.VotingPower == 0 { //exit as soon as the first Voting power set to zero is found
+	validators := make([]*abci.Validator, cmn.MinInt(len(cbs), maxVals))
+	for i, cb := range cbs {
+		if cb.VotingPower == 0 { //exit as soon as the first Voting power set to zero is found
 			break
 		}
 		if i >= maxVals {
 			return validators
 		}
-		validators[i] = vb.ABCIValidator()
+		validators[i] = cb.ABCIValidator()
 	}
 	return validators
 }
@@ -203,68 +212,68 @@ func ValidatorsDiff(previous, current []*abci.Validator, store state.SimpleDB) (
 	return
 }
 
-// Get - get a CandidateBond for a specific sender from the CandidateBonds
-func (vbs CandidateBonds) Get(sender sdk.Actor) (int, *CandidateBond) {
-	for i, vb := range vbs {
-		if vb.Sender.Equals(sender) {
-			return i, vb
+// GetByOwner - get a Candidate for a specific sender from the Candidates
+func (cbs Candidates) GetByOwner(owner sdk.Actor) (int, *Candidate) {
+	for i, cb := range cbs {
+		if cb.Owner.Equals(owner) {
+			return i, cb
 		}
 	}
 	return 0, nil
 }
 
-// GetByPubKey - get a CandidateBond for a specific validator from the CandidateBonds
-func (vbs CandidateBonds) GetByPubKey(pubkey []byte) (int, *CandidateBond) {
-	for i, vb := range vbs {
-		if bytes.Equal(vb.PubKey, pubkey) {
-			return i, vb
+// GetByPubKey - get a Candidate for a specific validator from the Candidates
+func (cbs Candidates) GetByPubKey(pubkey crypto.PubKey) (int, *Candidate) {
+	for i, cb := range cbs {
+		if cb.PubKey.Equals(pubkey) {
+			return i, cb
 		}
 	}
 	return 0, nil
 }
 
-// Add - adds a CandidateBond
-func (vbs CandidateBonds) Add(bond *CandidateBond) CandidateBonds {
-	return append(vbs, bond)
+// Add - adds a Candidate
+func (cbs Candidates) Add(bond *Candidate) Candidates {
+	return append(cbs, bond)
 }
 
 // Remove - remove validator from the validator list
-func (vbs CandidateBonds) Remove(i int) (CandidateBonds, error) {
+func (cbs Candidates) Remove(i int) (Candidates, error) {
 	switch {
 	case i < 0:
-		return vbs, fmt.Errorf("Cannot remove a negative element")
-	case i >= len(vbs):
-		return vbs, fmt.Errorf("Element is out of upper bound")
+		return cbs, fmt.Errorf("Cannot remove a negative element")
+	case i >= len(cbs):
+		return cbs, fmt.Errorf("Element is out of upper bound")
 	default:
-		return append(vbs[:i], vbs[i+1:]...), nil
+		return append(cbs[:i], cbs[i+1:]...), nil
 	}
 }
 
 //--------------------------------------------------------------------------------
 
 // DelegatorBond represents some bond tokens held by an account.
-// It is owned by one delegator, and is associated with the voting power of one candidate.
+// It is owned by one delegator, and is associated with the voting power of one pubKey.
 type DelegatorBond struct {
-	Candidate crypto.PubKey
-	Tickets   uint64
+	PubKey  crypto.PubKey
+	Tickets uint64
 }
 
 // DelegatorBonds - all delegator bonds existing with multiple delegatees
 type DelegatorBonds []*DelegatorBond
 
 // Get - get a DelegateeBond for a specific validator from the DelegateeBonds
-func (b DelegatorBonds) Get(candidate sdk.Actor) (int, *DelegatorBond) {
+func (b DelegatorBonds) Get(pubKey crypto.PubKey) (int, *DelegatorBond) {
 	for i, bv := range b {
-		if bytes.Equal(bv.Candidate.Address, candidate.Address) &&
-			bv.Candidate.ChainID == candidate.ChainID &&
-			bv.Candidate.App == candidate.App {
+		if bv.PubKey.Equal(pubKey) &&
+			bv.PubKey.ChainID == pubKey.ChainID &&
+			bv.PubKey.App == pubKey.App {
 			return i, bv
 		}
 	}
 	return 0, nil
 }
 
-// Remove - remove candidate from the candidate list
+// Remove - remove pubKey from the pubKey list
 func (b DelegatorBonds) Remove(i int) (DelegatorBonds, error) {
 	switch {
 	case i < 0:

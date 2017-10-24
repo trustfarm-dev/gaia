@@ -21,9 +21,9 @@ func newActors(n int) (actors []sdk.Actor) {
 
 //NOTE PubKey is supposed to be the binaryBytes of the crypto.PubKey
 // instead this is just being set the address here for testing purposes
-func bondsFromActors(actors []sdk.Actor, amts []int) (bonds []*CandidateBond) {
+func bondsFromActors(actors []sdk.Actor, amts []int) (bonds []*Candidate) {
 	for i, a := range actors {
-		bonds = append(bonds, &CandidateBond{
+		bonds = append(bonds, &Candidate{
 			Sender:      a,
 			PubKey:      a.Address.Bytes(),
 			Tickets:     uint64(amts[i]),
@@ -35,12 +35,12 @@ func bondsFromActors(actors []sdk.Actor, amts []int) (bonds []*CandidateBond) {
 
 }
 
-func TestCandidateBondsMaxVals(t *testing.T) {
+func TestCandidatesMaxVals(t *testing.T) {
 	params := defaultParams()
 	assert := assert.New(t)
 	store := state.NewMemKVStore()
 	actors := newActors(3)
-	bonds := CandidateBonds(bondsFromActors(actors, []int{10, 300, 123}))
+	bonds := Candidates(bondsFromActors(actors, []int{10, 300, 123}))
 
 	testCases := []struct {
 		maxVals, expectedVals int
@@ -60,14 +60,14 @@ func TestCandidateBondsMaxVals(t *testing.T) {
 	}
 }
 
-func TestCandidateBondsSort(t *testing.T) {
+func TestCandidatesSort(t *testing.T) {
 	params := defaultParams()
 	assert, require := assert.New(t), require.New(t)
 	store := state.NewMemKVStore()
 
 	N := 5
 	actors := newActors(N)
-	bonds := CandidateBonds(bondsFromActors(actors, []int{10, 300, 123, 4, 200}))
+	bonds := Candidates(bondsFromActors(actors, []int{10, 300, 123, 4, 200}))
 	expectedOrder := []int{1, 4, 2, 0, 3}
 
 	//test basic sort
@@ -95,13 +95,13 @@ func TestCandidateBondsSort(t *testing.T) {
 	}
 }
 
-func TestCandidateBondsUpdate(t *testing.T) {
+func TestCandidatesUpdate(t *testing.T) {
 	params := defaultParams()
 	assert, require := assert.New(t), require.New(t)
 	store := state.NewMemKVStore()
 
 	actors := newActors(3)
-	bonds := CandidateBonds(bondsFromActors(actors, []int{10, 300, 123}))
+	bonds := Candidates(bondsFromActors(actors, []int{10, 300, 123}))
 	bonds.Sort()
 
 	maxVals := 2

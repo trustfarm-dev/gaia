@@ -17,10 +17,14 @@ var (
 	resBadValidatorAddr      = abci.ErrBaseUnknownAddress.AppendLog("Validator does not exist for that address")
 	resMissingSignature      = abci.ErrBaseInvalidSignature.AppendLog("Missing signature")
 	resBondNotNominated      = abci.ErrBaseInvalidOutput.AppendLog("Cannot bond to non-nominated account")
-	resNoValidatorForAddress = abci.ErrBaseUnknownAddress.AppendLog("Validator does not exist for that address")
+	resNoCandidateForAddress = abci.ErrBaseUnknownAddress.AppendLog("Validator does not exist for that address")
 	resNoDelegatorForAddress = abci.ErrBaseInvalidInput.AppendLog("Delegator does not contain validator bond")
 	resInsufficientFunds     = abci.ErrBaseInsufficientFunds.AppendLog("Insufficient bond tickets")
 	resBadRemoveValidator    = abci.ErrInternalError.AppendLog("Error removing validator")
 
 	invalidInput = abci.CodeType_BaseInvalidInput
 )
+
+func resErrLoadingDelegators(err error) abci.Result {
+	return abci.ErrBaseEncodingError.AppendLog("Error loading delegators: " + err.Error()) //should never occur
+}

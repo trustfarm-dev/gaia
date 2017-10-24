@@ -10,7 +10,6 @@ import (
 	crypto "github.com/tendermint/go-crypto"
 	wire "github.com/tendermint/go-wire"
 
-	"github.com/cosmos/cosmos-sdk/client/commands/keys"
 	txcmd "github.com/cosmos/cosmos-sdk/client/commands/txs"
 	"github.com/cosmos/cosmos-sdk/modules/coin"
 
@@ -25,14 +24,19 @@ const (
 
 //nolint
 var (
+	CmdDeclareCandidacy = &cobra.Command{
+		Use:   "declare-candidacy",
+		Short: "create new validator pubKey account and delegate some coins to it",
+		RunE:  cmdDeclareCandidacy,
+	}
 	CmdBond = &cobra.Command{
 		Use:   "bond",
-		Short: "bond coins to your validator bond account",
+		Short: "delegate coins to an existing pubKey bond account",
 		RunE:  cmdBond,
 	}
 	CmdUnbond = &cobra.Command{
 		Use:   "unbond",
-		Short: "unbond coins from your validator bond account",
+		Short: "unbond coins from a pubKey bond account",
 		RunE:  cmdUnbond,
 	}
 )
@@ -43,6 +47,7 @@ func init() {
 	fsDelegation.String(FlagAmount, "1atom", "Amount of Atoms")
 	fsDelegation.String(FlagPubKey, "", "PubKey of the Validator")
 
+	CmdDeclareCandidacy.Flags().AddFlagSet(fsDelegation)
 	CmdBond.Flags().AddFlagSet(fsDelegation)
 	CmdUnbond.Flags().AddFlagSet(fsDelegation)
 }
@@ -53,32 +58,14 @@ func cmdBond(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	var pubkey crypto.PubKey
+	// Get the pubkey
 	pubkeyStr := viper.GetString(FlagPubKey)
-	if len(pubkeyStr) != 0 {
-
-		pkBytes, err := hex.DecodeString(pubkeyStr)
-		if err != nil {
-			return err
-		}
-		if len(pkBytes) != 32 { //if len(pubkeyStr) != 64 {
-			return fmt.Errorf("pubkey must be hex encoded string which is 64 characters long")
-		}
-		var pkEd crypto.PubKeyEd25519
-		copy(pkEd[:], pkBytes[:])
-		pubkey = pkEd.Wrap()
-
-	} else { // if pubkey flag is not used get the pubkey of the signer
-
-		name := viper.GetString(txcmd.FlagName)
-		if len(name) == 0 {
-			return fmt.Errorf("must use --name flag")
-		}
-		info, err := keys.GetKeyManager().Get(name)
-		if err != nil {
-			return err
-		}
-		pubkey = info.PubKey
+	if len(pubkeyStr) == 0 {
+		return fmt.Errorf("must use --pubkey flag")
+	}
+	pubKey, err := hex.DecodeString(pubkeyStr)
+	if err != nil {
+		return err
 	}
 
 	tx := stake.NewTxBond(amount, wire.BinaryBytes(pubkey))
@@ -86,12 +73,36 @@ func cmdBond(cmd *cobra.Command, args []string) error {
 }
 
 func cmdUnbond(cmd *cobra.Command, args []string) error {
-
 	amount, err := coin.ParseCoin(viper.GetString(FlagAmount))
 	if err != nil {
 		return err
 	}
 
+	var pubKey crypto.PubKey
+	pubkeyStr := viper.GetString(FlagPubKey)
+	if len(pubkeyStr) > 0 {
+		pubKey, err := hex.DecodeString(pubkeyStr)
+		if err != nil {
+			return err
+		}
+	}
+
 	tx := stake.NewTxUnbond(amount)
 	return txcmd.DoTx(tx)
+}
+
+func getPubKey(pubkeyStr string) (pubkey crypto.PubKey, err error) {
+	if len(pubkeyStr) != 64 { //if len(pkBytes) != 32 {
+		err = fmt.Errorf("pubkey must be hex encoded string which is 64 characters long")
+		return
+	}
+	var pkBytes []byte
+	pkBytes, err = hex.DecodeString(pubkeyStr)
+	if err != nil {
+		return
+	}
+	var pkEd crypto.PubKeyEd25519
+	copy(pkEd[:], pkBytes[:])
+	pubkey = pkEd.Wrap()
+	return
 }
