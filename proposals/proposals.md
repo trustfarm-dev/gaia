@@ -46,8 +46,8 @@ PubKey struct as defined by `tendermint/go-crypto`.
 
 ``` golang
 type TxBond struct {
-	Amount coin.Coin `json:"amount"`
-	PubKey crypto.PubKey    `json:"pubkey"`
+	Amount coin.Coin     `json:"amount"`
+	PubKey crypto.PubKey `json:"pubkey"`
 }
 ```
 
@@ -83,7 +83,7 @@ type CandidateBond struct {
 	Sender       sdk.Actor 
 	PubKey       crypto.PubKey
 	Tickets      uint64    
-    HoldCoins    uint64  
+	HoldCoins    uint64  
 	HoldAccount  sdk.Actor 
 	VotingPower  uint64   
 }
@@ -104,24 +104,17 @@ type DelegatorBond struct {
 
 `TxBond` and `TxUnbond` can now be used with expanded 
 functionality for use from delegators. Now however `TxUnbond` must also include 
-the PubKey which the unbonding is to occur from.
+the PubKey which the unbonding is to occur from. As such `TxBond` and `TxUnbond` 
+can be consolidate. 
 
 ``` golang
-type TxBond struct {
+type BondUpdate struct {
 	Amount coin.Coin        `json:"amount"`
 	PubKey crypto.PubKey    `json:"pubkey"`
 }
-```
 
-Additionally a new type of transaction must be introduced which designates you as a 
-Candidate.
-
-``` golang
-type TxDeclareCandidacy struct {
-	Candidate  sdk.Actor `json:"candidate"`
-	SelfBond     coin.Coin `json:"amount"`
-	Commission Decimal   `json:"commission"`
-}
+type TxBond struct { BondUpdate }
+type TxUnbond struct { BondUpdate }
 ```
 
 ## Unbonding Period
@@ -144,15 +137,15 @@ delegators. Included in this is an element self-regulation by validators.
  
 ``` golang
 type CandidateBond struct {
-	Sender            sdk.Actor 
-	PubKey            crypto.PubKey
-	Tickets           uint64    
-    HoldCoins         uint64  
-	HoldAccount       sdk.Actor 
-	VotingPower       uint64   
-    CommissionRate    uint64
-    CommissionMax     uint64
-    CommissionMaxRate uint64
+	Sender              sdk.Actor 
+	PubKey              crypto.PubKey
+    	Tickets             uint64    
+    	HoldCoins           uint64  
+    	HoldAccount         sdk.Actor 
+    	VotingPower         uint64   
+    	CommissionRate      uint64
+    	CommissionMax       uint64
+    	CommissionMaxChange uint64
 }
 ```
 
@@ -160,9 +153,19 @@ Four new terms are introduced here:
  - Commission: The current commission rate currently being charged by the validator
  - CommissionRate:  The commission rate charged from validation rewards
  - CommissionMax:  The maximum commission rate which this validator can charge
- - CommissionMaxRate: The maximum change per reward cycle which the validator can change their commission by
+ - CommissionMaxChange: The maximum change per reward cycle which the validator can change their commission by
 
-These terms will also need to be introduced into `TxDeclareCandidacy`
+Additionally a new type of transaction must be introduced which designates you as a 
+Candidate. Now `TxBond` is only used by delegators. 
+
+``` golang
+type TxDeclareCandidacy struct {
+	BondUpdate
+	Commission 	    uint64  
+	CommissionMax 	    uint64 
+	CommissionMaxChange uint64 
+}
+```
 
 ## Delegator Rebonding
 
@@ -184,12 +187,12 @@ Transactions structs of the rebond command may looks like this:
 
 ``` golang
 type TxRebond struct {
-	PubKey crypto.PubKey  `json:"pubkey"`
-	Amount coin.Coin      `json:"amount"`
+	BondUpdate
+	Rebond crypto.PubKey
 }
 ```
 
-Where the PubKey is the PubKey of the new validator to rebond to. 
+Where the Rebond is the PubKey of the new validator to rebond to. 
 
 ## Sub-Delegation
 
