@@ -28,8 +28,8 @@ validator bond is defined as the object below.
 type ValidatorBonds []*ValidatorBond
 
 type ValidatorBond struct {
-	Sender       sdk.Actor 
-	PubKey       []byte    
+	Validator    crypto.PubKey 
+	Owner        sdk.Actor    
 	BondedTokens uint64    
 	HoldAccount  sdk.Actor 
 	VotingPower  uint64   
@@ -46,8 +46,8 @@ PubKey struct as defined by `tendermint/go-crypto`.
 
 ``` golang
 type TxBond struct {
-	Amount coin.Coin     `json:"amount"`
-	PubKey crypto.PubKey `json:"pubkey"`
+	PubKey crypto.PubKey 
+	Amount coin.Coin     
 }
 ```
 
@@ -71,7 +71,7 @@ The previous struct `ValidatorBond` is now split up into two structs which repre
 the candidate account or the bond to a candidate account.
 
 Each validator-candidate bond is defined as the object below. 
- - Sender: Account which coins are bonded from and unbonded to
+ - Owner: Account which coins are bonded from and unbonded to
  - Pubkey: Candidate PubKey
  - Tickets: Total number of tickets provided for the candidate for bonds
  - HoldCoins: Total number of coins held by this validator
@@ -80,8 +80,8 @@ Each validator-candidate bond is defined as the object below.
 
 ``` golang
 type CandidateBond struct {
-	Sender       sdk.Actor 
-	PubKey       crypto.PubKey
+	Candidate    crypto.PubKey
+	Owner        sdk.Actor
 	Tickets      uint64    
 	HoldCoins    uint64  
 	HoldAccount  sdk.Actor 
@@ -97,7 +97,7 @@ one delegator, and is associated with the voting power of one delegatee.
 
 ``` golang
 type DelegatorBond struct {
-	Candidate  sdk.Actor
+	Candidate  crypto.PubKey
 	Tickets    uint64
 } 
 ```
@@ -109,8 +109,8 @@ can be consolidate.
 
 ``` golang
 type BondUpdate struct {
-	Amount coin.Coin        `json:"amount"`
-	PubKey crypto.PubKey    `json:"pubkey"`
+	Candidate crypto.PubKey
+	Amount    coin.Coin       
 }
 
 type TxBond struct { BondUpdate }
@@ -137,8 +137,8 @@ delegators. Included in this is an element self-regulation by validators.
  
 ``` golang
 type CandidateBond struct {
-	Sender              sdk.Actor 
-	PubKey              crypto.PubKey
+	Candidate           crypto.PubKey
+	Owner               sdk.Actor 
     	Tickets             uint64    
     	HoldCoins           uint64  
     	HoldAccount         sdk.Actor 
@@ -192,7 +192,7 @@ type TxRebond struct {
 }
 ```
 
-Where the Rebond is the PubKey of the new validator to rebond to. 
+Where the `Rebond` is the new validator to rebond to. 
 
 ## Sub-Delegation
 
