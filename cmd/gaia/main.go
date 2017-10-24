@@ -38,12 +38,12 @@ func getTickFnc() func(store state.SimpleDB) (diffVal []*abci.Validator, err err
 		store = stack.PrefixedStore(stake.Name(), store)
 
 		// Determine the validator set changes
-		validatorBonds := stake.LoadBonds(store)
-		startVal := validatorBonds.GetValidators(store)
-		validatorBonds.UpdateVotingPower(store)
-		newVal := validatorBonds.GetValidators(store)
+		candidateBonds := stake.LoadBonds(store)
+		startVal := candidateBonds.GetValidators(store)
+		candidateBonds.UpdateVotingPower(store)
+		newVal := candidateBonds.GetValidators(store)
 		diffVal = stake.ValidatorsDiff(startVal, newVal, store)
-		validatorBonds.CleanupEmpty(store)
+		candidateBonds.CleanupEmpty(store)
 
 		return
 	}

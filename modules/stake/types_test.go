@@ -21,26 +21,26 @@ func newActors(n int) (actors []sdk.Actor) {
 
 //NOTE PubKey is supposed to be the binaryBytes of the crypto.PubKey
 // instead this is just being set the address here for testing purposes
-func bondsFromActors(actors []sdk.Actor, amts []int) (bonds []*ValidatorBond) {
+func bondsFromActors(actors []sdk.Actor, amts []int) (bonds []*CandidateBond) {
 	for i, a := range actors {
-		bonds = append(bonds, &ValidatorBond{
-			Sender:       a,
-			PubKey:       a.Address.Bytes(),
-			BondedTokens: uint64(amts[i]),
-			HoldAccount:  getHoldAccount(a),
-			VotingPower:  uint64(amts[i]),
+		bonds = append(bonds, &CandidateBond{
+			Sender:      a,
+			PubKey:      a.Address.Bytes(),
+			Tickets:     uint64(amts[i]),
+			HoldAccount: getHoldAccount(a),
+			VotingPower: uint64(amts[i]),
 		})
 	}
 	return
 
 }
 
-func TestValidatorBondsMaxVals(t *testing.T) {
+func TestCandidateBondsMaxVals(t *testing.T) {
 	params := defaultParams()
 	assert := assert.New(t)
 	store := state.NewMemKVStore()
 	actors := newActors(3)
-	bonds := ValidatorBonds(bondsFromActors(actors, []int{10, 300, 123}))
+	bonds := CandidateBonds(bondsFromActors(actors, []int{10, 300, 123}))
 
 	testCases := []struct {
 		maxVals, expectedVals int
@@ -60,14 +60,14 @@ func TestValidatorBondsMaxVals(t *testing.T) {
 	}
 }
 
-func TestValidatorBondsSort(t *testing.T) {
+func TestCandidateBondsSort(t *testing.T) {
 	params := defaultParams()
 	assert, require := assert.New(t), require.New(t)
 	store := state.NewMemKVStore()
 
 	N := 5
 	actors := newActors(N)
-	bonds := ValidatorBonds(bondsFromActors(actors, []int{10, 300, 123, 4, 200}))
+	bonds := CandidateBonds(bondsFromActors(actors, []int{10, 300, 123, 4, 200}))
 	expectedOrder := []int{1, 4, 2, 0, 3}
 
 	//test basic sort
@@ -95,22 +95,22 @@ func TestValidatorBondsSort(t *testing.T) {
 	}
 }
 
-func TestValidatorBondsUpdate(t *testing.T) {
+func TestCandidateBondsUpdate(t *testing.T) {
 	params := defaultParams()
 	assert, require := assert.New(t), require.New(t)
 	store := state.NewMemKVStore()
 
 	actors := newActors(3)
-	bonds := ValidatorBonds(bondsFromActors(actors, []int{10, 300, 123}))
+	bonds := CandidateBonds(bondsFromActors(actors, []int{10, 300, 123}))
 	bonds.Sort()
 
 	maxVals := 2
 	params.MaxVals = maxVals
 	saveParams(store, params)
 
-	// Change some of the bonded tokens, get the new validator set
+	// Change some of the bonded tickets, get the new validator set
 	vals1 := bonds.GetValidators(store)
-	bonds[2].BondedTokens = 1000
+	bonds[2].Tickets = 1000
 	bonds.UpdateVotingPower(store)
 	vals2 := bonds.GetValidators(store)
 

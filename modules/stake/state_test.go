@@ -16,31 +16,31 @@ func TestState(t *testing.T) {
 
 	validator1 := sdk.Actor{"testChain", "testapp", []byte("addressvalidator1")}
 
-	validatorBonds := ValidatorBonds{
-		&ValidatorBond{
+	candidateBonds := CandidateBonds{
+		&CandidateBond{
 			Sender:       validator1,
 			PubKey:       []byte{},
-			BondedTokens: 9,
+			Tickets: 9,
 			HoldAccount:  sdk.Actor{"testChain", "testapp", []byte("addresslockedtoapp")},
 		}}
-	var validatorNilBonds ValidatorBonds
+	var validatorNilBonds CandidateBonds
 
 	/////////////////////////////////////////////////////////////////////////
-	// ValidatorBonds checks
+	// CandidateBonds checks
 
 	//check the empty store first
 	resGet := LoadBonds(store)
 	assert.Equal(validatorNilBonds, resGet)
 
 	//Set and retrieve a record
-	saveBonds(store, validatorBonds)
+	saveBonds(store, candidateBonds)
 	resGet = LoadBonds(store)
-	assert.Equal(validatorBonds, resGet)
+	assert.Equal(candidateBonds, resGet)
 
 	//modify a records, save, and retrieve
-	validatorBonds[0].BondedTokens = 99
-	saveBonds(store, validatorBonds)
+	candidateBonds[0].Tickets = 99
+	saveBonds(store, candidateBonds)
 	resGet = LoadBonds(store)
-	assert.Equal(validatorBonds, resGet)
+	assert.Equal(candidateBonds, resGet)
 
 }

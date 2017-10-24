@@ -36,20 +36,20 @@ var (
 // TODO ultimately this function should be made unexported... being used right now
 // for patchwork of tick functionality therefor much easier if exported until
 // the new SDK is created
-func LoadBonds(store state.SimpleDB) (validatorBonds ValidatorBonds) {
+func LoadBonds(store state.SimpleDB) (candidateBonds CandidateBonds) {
 	b := store.Get(BondKey)
 	if b == nil {
 		return
 	}
-	err := wire.ReadBinaryBytes(b, &validatorBonds)
+	err := wire.ReadBinaryBytes(b, &candidateBonds)
 	if err != nil {
 		panic(err) // This error should never occure big problem if does
 	}
 	return
 }
 
-func saveBonds(store state.SimpleDB, validatorBonds ValidatorBonds) {
-	b := wire.BinaryBytes(validatorBonds)
+func saveBonds(store state.SimpleDB, candidateBonds CandidateBonds) {
+	b := wire.BinaryBytes(candidateBonds)
 	store.Set(BondKey, b)
 }
 

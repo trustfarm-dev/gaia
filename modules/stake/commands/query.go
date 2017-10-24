@@ -26,7 +26,7 @@ var (
 
 func cmdQueryValidators(cmd *cobra.Command, args []string) error {
 
-	var bonds stake.ValidatorBonds
+	var bonds stake.CandidateBonds
 
 	prove := !viper.GetBool(commands.FlagTrustNode)
 	key := stack.PrefixedKey(stake.Name(), stake.BondKey)

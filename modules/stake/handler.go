@@ -135,7 +135,7 @@ func checkTxBond(tx TxBond, sender sdk.Actor, store state.SimpleDB) error {
 	_, bond := bonds.GetByPubKey(tx.PubKey)
 	if bond != nil {
 		if !bond.Sender.Equals(sender) {
-			return fmt.Errorf("cannot bond tokens to pubkey used by another validator"+
+			return fmt.Errorf("cannot bond tickets to pubkey used by another validator"+
 				" PubKey %v already registered with %v validator address",
 				bond.PubKey, bond.Sender)
 		}
@@ -151,12 +151,12 @@ func checkTxUnbond(tx TxUnbond, sender sdk.Actor, store state.SimpleDB) error {
 		return fmt.Errorf("Invalid coin denomination")
 	}
 
-	//check if have enough tokens to unbond
+	//check if have enough tickets to unbond
 	bonds := LoadBonds(store)
 	_, bond := bonds.Get(sender)
-	if bond.BondedTokens < uint64(tx.Amount.Amount) {
-		return fmt.Errorf("not enough bond tokens to unbond, have %v, trying to unbond %v",
-			bond.BondedTokens, tx.Amount)
+	if bond.Tickets < uint64(tx.Amount.Amount) {
+		return fmt.Errorf("not enough bond tickets to unbond, have %v, trying to unbond %v",
+			bond.Tickets, tx.Amount)
 	}
 	return nil
 }
@@ -216,7 +216,7 @@ func runTxBond(store state.SimpleDB, sender, holder sdk.Actor,
 	bonds := LoadBonds(store)
 	idx, bond := bonds.Get(sender)
 	if bond == nil { //if it doesn't yet exist create it
-		bonds = bonds.Add(NewValidatorBond(sender, holder, tx.PubKey))
+		bonds = bonds.Add(NewCandidateBond(sender, holder, tx.PubKey))
 		idx = len(bonds) - 1
 	}
 
@@ -227,7 +227,7 @@ func runTxBond(store state.SimpleDB, sender, holder sdk.Actor,
 	}
 
 	// Update the bond and save to store
-	bonds[idx].BondedTokens += uint64(bondCoin.Amount)
+	bonds[idx].Tickets += uint64(bondCoin.Amount)
 	saveBonds(store, bonds)
 
 	return abci.OK
@@ -251,7 +251,7 @@ func runTxUnbond(store state.SimpleDB, sender, holder sdk.Actor,
 		return res
 	}
 
-	bond.BondedTokens -= unbondAmt
+	bond.Tickets -= unbondAmt
 
 	saveBonds(store, bonds)
 	return abci.OK

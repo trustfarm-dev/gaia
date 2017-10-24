@@ -92,7 +92,7 @@ func TestBondTxIncrements(t *testing.T) {
 		validators := LoadBonds(store)
 		expectedBond := int64(i+1) * bondAmount // +1 since we send 1 at the start of loop
 		expectedSender := initSender - expectedBond
-		gotBonded := int64(validators[0].BondedTokens)
+		gotBonded := int64(validators[0].Tickets)
 		gotHolder := accStore[string(holder.Address)]
 		gotSender := accStore[string(sender.Address)]
 
@@ -128,7 +128,7 @@ func TestUnbondTxIncrements(t *testing.T) {
 		validators := LoadBonds(store)
 		expectedBond := initBond - int64(i+1)*unbondAmount // +1 since we send 1 at the start of loop
 		expectedSender := initSender + (initBond - expectedBond)
-		gotBonded := int64(validators[0].BondedTokens)
+		gotBonded := int64(validators[0].Tickets)
 		gotHolder := accStore[string(holder.Address)]
 		gotSender := accStore[string(sender.Address)]
 
@@ -156,7 +156,7 @@ func TestBondTxMultipleVals(t *testing.T) {
 		val := validators[i]
 		balanceGot, balanceExpect := accStore[string(val.Sender.Address)], initSender-int64(i)
 		assert.Equal(len(validators), i+1, "expected %d validators got %d", i+1, len(validators))
-		assert.Equal(int(val.BondedTokens), i, "expected %d tokens, got %d", i, val.BondedTokens)
+		assert.Equal(int(val.Tickets), i, "expected %d tickets, got %d", i, val.Tickets)
 		assert.Equal(balanceGot, balanceExpect, "expected account to have %d, got %d", balanceExpect, balanceGot)
 	}
 
@@ -173,7 +173,7 @@ func TestBondTxMultipleVals(t *testing.T) {
 		validators = LoadBonds(store)
 		balanceGot, balanceExpect := accStore[string(val.Sender.Address)], initSender
 		assert.Equal(len(validators), len(senders)-(i+1), "expected %d validators got %d", len(senders)-(i+1), len(validators))
-		assert.Equal(int(val.BondedTokens), 0, "expected %d tokens, got %d", i, val.BondedTokens)
+		assert.Equal(int(val.Tickets), 0, "expected %d tickets, got %d", i, val.Tickets)
 		assert.Equal(balanceGot, balanceExpect, "expected account to have %d, got %d", balanceExpect, balanceGot)
 	}
 }
