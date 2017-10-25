@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	crypto "github.com/tendermint/go-crypto"
 
 	"github.com/cosmos/cosmos-sdk"
 	"github.com/cosmos/cosmos-sdk/state"
@@ -18,10 +19,10 @@ func TestState(t *testing.T) {
 
 	candidates := Candidates{
 		&Candidate{
-			Sender:       validator1,
-			PubKey:       []byte{},
-			Tickets: 9,
-			HoldAccount:  sdk.Actor{"testChain", "testapp", []byte("addresslockedtoapp")},
+			Owner:      validator1,
+			PubKey:     crypto.PubKey{},
+			Tickets:    9,
+			Delegators: sdk.Actors{},
 		}}
 	var validatorNilBonds Candidates
 
@@ -29,18 +30,25 @@ func TestState(t *testing.T) {
 	// Candidates checks
 
 	//check the empty store first
-	resGet := LoadBonds(store)
+	resGet := LoadCandidates(store)
 	assert.Equal(validatorNilBonds, resGet)
 
 	//Set and retrieve a record
-	saveBonds(store, candidates)
-	resGet = LoadBonds(store)
+	saveCandidates(store, candidates)
+	resGet = LoadCandidates(store)
 	assert.Equal(candidates, resGet)
 
 	//modify a records, save, and retrieve
 	candidates[0].Tickets = 99
-	saveBonds(store, candidates)
-	resGet = LoadBonds(store)
+	saveCandidates(store, candidates)
+	resGet = LoadCandidates(store)
 	assert.Equal(candidates, resGet)
 
+}
+
+func TestDelegatorState(t *testing.T) {
+	actor := sdk.NewActor("appFooBar", []byte("bar"))
+	key := getDelegatorBondsKey(actor)
+	got := getDelegatorFromKey(key)
+	assert.True(t, actor.Equals(got), "delegator key mechanism faulty sent in %v, got %v", actor, key)
 }

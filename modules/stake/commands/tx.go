@@ -8,8 +8,8 @@ import (
 	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	crypto "github.com/tendermint/go-crypto"
-	wire "github.com/tendermint/go-wire"
 
+	sdk "github.com/cosmos/cosmos-sdk"
 	txcmd "github.com/cosmos/cosmos-sdk/client/commands/txs"
 	"github.com/cosmos/cosmos-sdk/modules/coin"
 
@@ -52,7 +52,21 @@ func init() {
 	CmdUnbond.Flags().AddFlagSet(fsDelegation)
 }
 
+type makeTx func(coin.Coin, crypto.PubKey) sdk.Tx
+
+func cmdDeclareCandidacy(cmd *cobra.Command, args []string) error {
+	return cmdBondUpdate(cmd, args, stake.NewTxDeclareCandidacy)
+}
+
 func cmdBond(cmd *cobra.Command, args []string) error {
+	return cmdBondUpdate(cmd, args, stake.NewTxBond)
+}
+
+func cmdUnbond(cmd *cobra.Command, args []string) error {
+	return cmdBondUpdate(cmd, args, stake.NewTxUnbond)
+}
+
+func cmdBondUpdate(cmd *cobra.Command, args []string, makeTx makeTx) error {
 	amount, err := coin.ParseCoin(viper.GetString(FlagAmount))
 	if err != nil {
 		return err
@@ -63,46 +77,17 @@ func cmdBond(cmd *cobra.Command, args []string) error {
 	if len(pubkeyStr) == 0 {
 		return fmt.Errorf("must use --pubkey flag")
 	}
-	pubKey, err := hex.DecodeString(pubkeyStr)
-	if err != nil {
-		return err
-	}
-
-	tx := stake.NewTxBond(amount, wire.BinaryBytes(pubkey))
-	return txcmd.DoTx(tx)
-}
-
-func cmdUnbond(cmd *cobra.Command, args []string) error {
-	amount, err := coin.ParseCoin(viper.GetString(FlagAmount))
-	if err != nil {
-		return err
-	}
-
-	var pubKey crypto.PubKey
-	pubkeyStr := viper.GetString(FlagPubKey)
-	if len(pubkeyStr) > 0 {
-		pubKey, err := hex.DecodeString(pubkeyStr)
-		if err != nil {
-			return err
-		}
-	}
-
-	tx := stake.NewTxUnbond(amount)
-	return txcmd.DoTx(tx)
-}
-
-func getPubKey(pubkeyStr string) (pubkey crypto.PubKey, err error) {
 	if len(pubkeyStr) != 64 { //if len(pkBytes) != 32 {
-		err = fmt.Errorf("pubkey must be hex encoded string which is 64 characters long")
-		return
+		return fmt.Errorf("pubkey must be Ed25519 hex encoded string which is 64 characters long")
 	}
-	var pkBytes []byte
-	pkBytes, err = hex.DecodeString(pubkeyStr)
+	pkBytes, err := hex.DecodeString(pubkeyStr)
 	if err != nil {
-		return
+		return err
 	}
 	var pkEd crypto.PubKeyEd25519
 	copy(pkEd[:], pkBytes[:])
-	pubkey = pkEd.Wrap()
-	return
+	pubKey := pkEd.Wrap()
+
+	tx := makeTx(amount, pubKey)
+	return txcmd.DoTx(tx)
 }

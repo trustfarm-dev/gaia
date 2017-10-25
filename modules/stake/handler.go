@@ -131,19 +131,15 @@ func checkTxDeclareCandidacy(tx TxDeclareCandidacy, sender sdk.Actor, store stat
 	bonds := LoadCandidates(store)
 	_, bond := bonds.GetByPubKey(tx.PubKey)
 	if bond != nil {
-		if !bond.Owner.Equals(sender) {
-			return fmt.Errorf("cannot bond to pubkey used by another validator-pubKey"+
-				" PubKey %v already registered with %v validator address",
-				bond.PubKey, bond.Owner)
-		}
+		return fmt.Errorf("cannot bond to pubkey which is already declared candidacy"+
+			" PubKey %v already registered with %v candidate address",
+			bond.PubKey, bond.Owner)
 	}
 	_, bond = bonds.GetByOwner(sender)
 	if bond != nil {
-		if !bond.PubKey.Equals(tx.PubKey) {
-			return fmt.Errorf("cannot bond to sender address already associated"+
-				" with another validator-pubKey with the PubKey %v",
-				bond.PubKey)
-		}
+		return fmt.Errorf("cannot bond to sender address already associated"+
+			" with another validator-pubKey with the PubKey %v",
+			bond.PubKey)
 	}
 
 	return checkDenom(tx.BondUpdate, store)
@@ -163,10 +159,7 @@ func checkTxBond(tx TxBond, sender sdk.Actor, store state.SimpleDB) error {
 func checkTxUnbond(tx TxUnbond, sender sdk.Actor, store state.SimpleDB) error {
 
 	//check if have enough tickets to unbond
-	bonds, err := loadDelegatorBonds(store, sender)
-	if err != nil {
-		return fmt.Errorf("Error attempting to retrieve %v", err.Error())
-	}
+	bonds := loadDelegatorBonds(store, sender)
 	_, bond := bonds.Get(tx.PubKey)
 	if bond.Tickets < uint64(tx.Bond.Amount) {
 		return fmt.Errorf("not enough bond tickets to unbond, have %v, trying to unbond %v",
@@ -208,7 +201,7 @@ func (h Handler) DeliverTx(ctx sdk.Context, store state.SimpleDB,
 		abciRes = runTxBond(store, sender, fn, _tx)
 	case TxUnbond:
 		//context with hold account permissions
-		ctx2 := ctx.WithPermissions(HoldAccount(sender))
+		ctx2 := ctx.WithPermissions(getHoldAccount(sender))
 		fn := defaultTransferFn(ctx2, store, dispatch)
 		abciRes = runTxUnbond(store, sender, fn, _tx)
 	}
@@ -229,31 +222,23 @@ func (h Handler) DeliverTx(ctx sdk.Context, store state.SimpleDB,
 func runTxDeclareCandidacy(store state.SimpleDB, sender sdk.Actor,
 	transferFn transferFn, tx TxDeclareCandidacy) (res abci.Result) {
 
-	// Get the validator bond accounts, and bond and index for this sender
+	// create and save the empty candidate
 	bonds := LoadCandidates(store)
-	idx, bond := bonds.GetByOwner(sender)
-	if bond == nil { //if it doesn't yet exist create it
-		bond = NewCandidate(sender, tx.PubKey)
-		bonds = bonds.Add(bond)
-		idx = len(bonds) - 1
+	_, bond := bonds.GetByOwner(sender)
+	if bond != nil { //if it doesn't yet exist create it
+		return resCandidateExistsAddr
 	}
+	bond = NewCandidate(sender, tx.PubKey)
+	bonds = bonds.Add(bond)
+	saveCandidates(store, bonds)
 
-	// Move coins from the sender account to a (self-bond) delegator account
+	// move coins from the sender account to a (self-bond) delegator account
+	// the candidate account will be updated automatically here
 	txBond := TxBond{tx.BondUpdate}
 	res = runTxBond(store, sender, transferFn, txBond)
 	if res.IsErr() {
 		return res
 	}
-
-	// Also update the  holder account
-	res = transferFn(sender, bond.HoldAccount(), coin.Coins{tx.Bond})
-	if res.IsErr() {
-		return res
-	}
-
-	// Update the bond and save to store
-	bonds[idx].Tickets += uint64(tx.Bond.Amount)
-	saveCandidates(store, bonds)
 
 	return abci.OK
 }
@@ -275,10 +260,7 @@ func runTxBond(store state.SimpleDB, sender sdk.Actor,
 	}
 
 	// Get or create delegator bonds
-	delegatorBonds, err := loadDelegatorBonds(store, sender)
-	if err != nil {
-		return resErrLoadingDelegators(err)
-	}
+	delegatorBonds := loadDelegatorBonds(store, sender)
 	if len(delegatorBonds) == 0 {
 		delegatorBonds = DelegatorBonds{
 			&DelegatorBond{
@@ -293,6 +275,13 @@ func runTxBond(store state.SimpleDB, sender sdk.Actor,
 	delegatorBonds[j].Tickets += uint64(tx.Bond.Amount)
 	candidates[i].Tickets += uint64(tx.Bond.Amount)
 
+	// Also add the delegator to running list of delegators
+	l := len(candidates[i].Delegators)
+	delegators := make([]sdk.Actor, l+1)
+	copy(delegators[:l], candidates[i].Delegators[:])
+	delegators[l] = sender
+	candidates[i].Delegators = delegators
+
 	// Save to store
 	saveCandidates(store, candidates)
 	saveDelegatorBonds(store, sender, delegatorBonds)
@@ -304,10 +293,7 @@ func runTxUnbond(store state.SimpleDB, sender sdk.Actor,
 	transferFn transferFn, tx TxUnbond) (res abci.Result) {
 
 	//get delegator bond
-	delegatorBonds, err := loadDelegatorBonds(store, sender)
-	if err != nil {
-		return resErrLoadingDelegators(err)
-	}
+	delegatorBonds := loadDelegatorBonds(store, sender)
 	_, delegatorBond := delegatorBonds.Get(tx.PubKey)
 	if delegatorBond == nil {
 		return resNoDelegatorForAddress
@@ -315,25 +301,36 @@ func runTxUnbond(store state.SimpleDB, sender sdk.Actor,
 
 	//get pubKey bond
 	candidates := LoadCandidates(store)
-	bvIndex, candidate := candidates.GetByPubKey(tx.PubKey)
+	cdtIndex, candidate := candidates.GetByPubKey(tx.PubKey)
 	if candidate == nil {
 		return resNoCandidateForAddress
 	}
 
 	// subtract bond tokens from delegatorBond
-	if delegatorBond.Tickets.LT(tx.Bond.Amount) {
+	if delegatorBond.Tickets < uint64(tx.Bond.Amount) {
 		return resInsufficientFunds
 	}
-	delegatorBond.Tickets -= tx.Bond.Amount
+	delegatorBond.Tickets -= uint64(tx.Bond.Amount)
 
-	if delegatorBond.Tickets.Equal(Zero) {
+	if delegatorBond.Tickets == 0 {
 		//begin to unbond all of the tokens if the validator unbonds their last token
-		if sender.Equals(tx.PubKey) {
-			res = fullyUnbondPubKey(candidate, store)
+		if sender.Equals(candidate.Owner) {
+			//remove from list of delegators in the candidate
+			candidate.Delegators = candidate.RemoveDelegator(sender)
+
+			//remove bond from delegator's list
+			removeDelegatorBonds(store, sender)
+
+			//panic(fmt.Sprintf("debug panic: %v\n", loadDelegatorBonds(store, candidate.Owner)))
+			res = fullyUnbondPubKey(candidate, store, transferFn)
 			if res.IsErr() {
 				return res //TODO add more context to this error?
 			}
 		} else {
+			//remove from list of delegators in the candidate
+			candidate.Delegators = candidate.RemoveDelegator(sender)
+
+			//remove bond from delegator's list
 			removeDelegatorBonds(store, sender)
 		}
 	} else {
@@ -341,45 +338,39 @@ func runTxUnbond(store state.SimpleDB, sender sdk.Actor,
 	}
 
 	// transfer coins back to account
-	candidate.Tickets -= tx.Bond.Amount
-	if candidate.TotalBondTokens.Equal(Zero) {
-		candidates.Remove(bvIndex)
+	candidate.Tickets -= uint64(tx.Bond.Amount)
+	if candidate.Tickets == 0 {
+		candidates.Remove(cdtIndex)
 	}
-	unbondCoin := tx.Bond
-	unbondAmt := uint64(unbondCoin.Amount)
-	res = transferFn(candidate.HoldAccount(), sender, coin.Coins{unbondCoin})
+	res = transferFn(candidate.HoldAccount(), sender, coin.Coins{tx.Bond})
 	if res.IsErr() {
 		return res
 	}
-
-	bond.Tickets -= unbondAmt
-
 	saveCandidates(store, candidates)
+
 	return abci.OK
 }
 
 //TODO improve efficiency of this function
-func fullyUnbondPubKey(candidate *Candidate, store state.SimpleDB,
-	sender sdk.Actor, transferFn transferFn) (res abci.Result) {
+func fullyUnbondPubKey(candidate *Candidate, store state.SimpleDB, transferFn transferFn) (res abci.Result) {
+
+	// get global params
+	params := loadParams(store)
+	//maxVals := params.MaxVals
+	bondDenom := params.AllowedBondDenom
 
 	//TODO upgrade list queue... make sure that endByte as nil is okay
-	allDelegators := store.List([]byte{delegatorKeyPrefix}, nil, maxVal)
+	//allDelegators := store.List([]byte{DelegatorBondKey}, nil, maxVals)
+	delegators := candidate.Delegators
 
-	for _, delegatorRec := range allDelegators {
+	for _, delegator := range delegators {
 
-		delegator, err := getDelegatorFromKey(delegatorRec.Key)
-		if err != nil {
-			return resErrLoadingDelegator(delegatorRec.Key) //should never occur
-		}
-		delegatorBonds, err := loadDelegatorBonds(store, delegator)
-		if err != nil {
-			return resErrLoadingDelegators(err)
-		}
+		delegatorBonds := loadDelegatorBonds(store, delegator)
 		for _, delegatorBond := range delegatorBonds {
 			if delegatorBond.PubKey.Equals(candidate.PubKey) {
 				txUnbond := TxUnbond{BondUpdate{candidate.PubKey,
-					coin.Coin{bondDenom, delegatorBond.Tickets}}}
-				res = runTxUnbond(store, delegator, candidate.HolderAccount(), transferFn, txUnbond)
+					coin.Coin{bondDenom, int64(delegatorBond.Tickets)}}}
+				res = runTxUnbond(store, delegator, transferFn, txUnbond)
 				if res.IsErr() {
 					return res
 				}

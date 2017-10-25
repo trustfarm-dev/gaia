@@ -2,10 +2,10 @@ package stake
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk"
-	"github.com/cosmos/cosmos-sdk/errors"
 	"github.com/cosmos/cosmos-sdk/modules/coin"
 	"github.com/cosmos/cosmos-sdk/state"
 	abci "github.com/tendermint/abci/types"
+	crypto "github.com/tendermint/go-crypto"
 	"github.com/tendermint/go-wire"
 )
 
@@ -27,10 +27,14 @@ func defaultTransferFn(ctx sdk.Context, store state.SimpleDB, dispatch sdk.Deliv
 	}
 }
 
+// nolint
 const (
-	candidateKey = iota
-	delegatorBondKey
-	paramKey
+	// Keys for store prefixes
+	CandidateKey      = iota
+	CandidatesListKey = iota
+	DelegatorBondKey
+	DelegatorBondsListKey
+	ParamKey
 )
 
 // LoadCandidates - loads the pubKey bond set
@@ -38,7 +42,7 @@ const (
 // for patchwork of tick functionality therefor much easier if exported until
 // the new SDK is created
 func LoadCandidates(store state.SimpleDB) (candidates Candidates) {
-	b := store.Get([]byte{candidateKey})
+	b := store.Get([]byte{CandidateKey})
 	if b == nil {
 		return
 	}
@@ -51,55 +55,69 @@ func LoadCandidates(store state.SimpleDB) (candidates Candidates) {
 
 func saveCandidates(store state.SimpleDB, candidates Candidates) {
 	b := wire.BinaryBytes(candidates)
-	store.Set([]byte{candidateKey}, b)
+	store.Set([]byte{CandidateKey}, b)
 }
 
 /////////////////////////////////////////////////////////////////////////////////
 
-func loadDelegatorBondsKey(delegator sdk.Actor) []byte {
-	delegatorBytes := wire.BinaryBytes(&delegator)
-	return append([]byte{delegatorBondKey}, delegatorBytes...)
+func getDelegatorBondKey(delegator sdk.Actor, candidate crypto.PubKey) []byte {
+	bondBytes := append(wire.BinaryBytes(&delegator), candidate.Bytes()...)
+	return append([]byte{DelegatorBondKey}, bondBytes...)
 }
-func getDelegatorFromKey(key []byte) (delegator sdk.Actor, err error) {
-	err = wire.ReadBinaryBytes(key[1:], &delegator)
+
+//func getDelegatorFromKey(key []byte) (delegator sdk.Actor) {
+//err := wire.ReadBinaryBytes(key[1:], &delegator)
+//if err != nil {
+//panic(fmt.Sprintf("%v", key))
+//panic(err)
+//}
+//return
+//}
+
+func loadDelegatorBond(store state.SimpleDB,
+	delegator sdk.Actor, candidate crypto.PubKey) (bond DelegatorBond) {
+
+	delegatorBytes := store.Get(getDelegatorBondKey(delegator, candidate))
+	if delegatorBytes == nil {
+		return
+	}
+
+	err := wire.ReadBinaryBytes(delegatorBytes, &bond)
 	if err != nil {
-		err = errors.ErrDecoding()
+		panic(err)
+	}
+	return
+}
+
+func loadDelegatorBonds(store state.SimpleDB,
+	delegator sdk.Actor) (bonds DelegatorBonds) {
+
+	delegatorBytes := store.Get(getDelegatorBondsKey(delegator))
+	if delegatorBytes == nil {
+		return
+	}
+
+	err := wire.ReadBinaryBytes(delegatorBytes, &bonds)
+	if err != nil {
+		panic(err)
 	}
 	return
 }
 
 func saveDelegatorBonds(store state.SimpleDB, delegator sdk.Actor, bonds DelegatorBonds) {
 	bondsBytes := wire.BinaryBytes(bonds)
-	store.Set(loadDelegatorBondsKey(delegator), bondsBytes)
-}
-
-func loadDelegatorBonds(store state.SimpleDB,
-	delegator sdk.Actor) (bonds DelegatorBonds, err error) {
-
-	delegatorBytes := store.Get(loadDelegatorBondsKey(delegator))
-	if delegatorBytes == nil {
-		return
-	}
-	return readDelegatorBonds(delegatorBytes)
-}
-
-func readDelegatorBonds(delegatorBytes []byte) (bonds DelegatorBonds, err error) {
-	err = wire.ReadBinaryBytes(delegatorBytes, &bonds)
-	if err != nil {
-		err = errors.ErrDecoding()
-	}
-	return
+	store.Set(getDelegatorBondsKey(delegator), bondsBytes)
 }
 
 func removeDelegatorBonds(store state.SimpleDB, delegator sdk.Actor) {
-	store.Remove(loadDelegatorBondsKey(delegator))
+	store.Remove(getDelegatorBondsKey(delegator))
 }
 
 /////////////////////////////////////////////////////////////////////////////////
 
 // load/save the global staking params
 func loadParams(store state.SimpleDB) (params Params) {
-	b := store.Get([]byte{paramKey})
+	b := store.Get([]byte{ParamKey})
 	if b == nil {
 		return defaultParams()
 	}
@@ -111,5 +129,5 @@ func loadParams(store state.SimpleDB) (params Params) {
 }
 func saveParams(store state.SimpleDB, params Params) {
 	b := wire.BinaryBytes(params)
-	store.Set([]byte{paramKey}, b)
+	store.Set([]byte{ParamKey}, b)
 }

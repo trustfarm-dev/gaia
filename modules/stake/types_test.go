@@ -24,10 +24,9 @@ func newActors(n int) (actors []sdk.Actor) {
 func bondsFromActors(actors []sdk.Actor, amts []int) (bonds []*Candidate) {
 	for i, a := range actors {
 		bonds = append(bonds, &Candidate{
-			Sender:      a,
-			PubKey:      a.Address.Bytes(),
+			PubKey:      newPubKey("foobar"),
+			Owner:       a,
 			Tickets:     uint64(amts[i]),
-			HoldAccount: getHoldAccount(a),
 			VotingPower: uint64(amts[i]),
 		})
 	}

@@ -12,9 +12,9 @@ import (
 //nolint
 var (
 	CmdQueryValidators = &cobra.Command{
-		Use:   "validators",
-		Short: "Query for the validator set",
-		RunE:  cmdQueryValidators,
+		Use:   "candidates",
+		Short: "Query for the validator-candidates set",
+		RunE:  cmdQueryCandidates,
 	}
 	// TODO individual validators
 	//CmdQueryValidator = &cobra.Command{
@@ -24,12 +24,12 @@ var (
 	//}
 )
 
-func cmdQueryValidators(cmd *cobra.Command, args []string) error {
+func cmdQueryCandidates(cmd *cobra.Command, args []string) error {
 
 	var bonds stake.Candidates
 
 	prove := !viper.GetBool(commands.FlagTrustNode)
-	key := stack.PrefixedKey(stake.Name(), stake.BondKey)
+	key := stack.PrefixedKey(stake.Name(), []byte{stake.CandidateKey})
 	h, err := query.GetParsed(key, &bonds, prove)
 	if err != nil {
 		return err
