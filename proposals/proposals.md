@@ -8,10 +8,11 @@ Overall the Staking module should be rolled out in the following steps
 
 1. Self-Bonding
 2. Delegation
-3. Unbonding period
-4. Rewards, Commission, CryptoEconomics Balancing Model
-5. Delegator Rebonding
-6. Sub-Delegation
+3. Delegator Fees Piggy Bank
+4. Unbonding period
+5. Rewards, Commission, CryptoEconomics Balancing Model
+6. Delegator Rebonding
+7. Sub-Delegation
 
 ## Self-Bonding
 
@@ -73,7 +74,7 @@ the candidate account or the bond to a candidate account.
 Each validator-candidate bond is defined as the object below. 
  - Owner: Account which coins are bonded from and unbonded to
  - Pubkey: Candidate PubKey
- - Tickets: Total number of tickets provided for the candidate for bonds
+ - Shares: Total number of shares provided for the candidate for bonds
  - HoldCoins: Total number of coins held by this validator
  - HoldAccount: Account where the bonded coins are held. Controlled by the app
  - VotingPower: Voting power in consensus
@@ -82,7 +83,7 @@ Each validator-candidate bond is defined as the object below.
 type CandidateBond struct {
 	Candidate    crypto.PubKey
 	Owner        sdk.Actor
-	Tickets      uint64    
+	Shares       uint64    
 	HoldCoins    uint64  
 	HoldAccount  sdk.Actor 
 	VotingPower  uint64   
@@ -90,7 +91,7 @@ type CandidateBond struct {
 ```
 
 With this model the exchange rate (which is a fraction or decimal) does not
-need to be stored and can be calculated as needed as `HoldCoins/Tickets`. 
+need to be stored and can be calculated as needed as `HoldCoins/Shares`. 
 
 DelegatorBond represents some bond tokens held by an account. It is owned by
 one delegator, and is associated with the voting power of one delegatee.
@@ -98,7 +99,7 @@ one delegator, and is associated with the voting power of one delegatee.
 ``` golang
 type DelegatorBond struct {
 	Candidate  crypto.PubKey
-	Tickets    uint64
+	Shares     uint64
 } 
 ```
 
@@ -117,6 +118,29 @@ type TxBond struct { BondUpdate }
 type TxUnbond struct { BondUpdate }
 ```
 
+## Delegator Fees Piggy Bank
+
+In addition to the validator shares which each delegator holds, they also hold
+a piggy bank account which increases based on the amount of time which the
+
+ - The piggy bank account can only be emptied out entirely every time it is withdrawn from 
+ - Cannot add to an existing delegation until the piggybank is emptied - maybe it is automatically emptied each time there is a delegation (if that is possible)
+ - Piggy bank calculated on withdraw based on the delegation "shares" as well as timestamp?
+
+Maybe will affect the delegator bonds to look something like this: 
+
+``` golang
+type DelegatorBond struct {
+	Candidate        crypto.PubKey
+	Shares           uint64
+    LastFeeWithdrawl time.Time
+} 
+
+func (DelegatorBond)WithdrawFees(withdrawAddr []byte){
+........
+}
+```
+
 ## Unbonding Period
 
 A staking-module state parameter will be introduced which defines the number of
@@ -130,16 +154,16 @@ coins in a queue before being returned.
 Rewards are payed directly to the `HoldAccount` (and reflected in the `HoldCoins`) 
 during each reward cycle.
 
-TODO add discussion about the Balancing Model (egg curve)
+TODO add discussion about the Balancing Model 
 
 Each validator will now have the opportunity to charge commission to their
 delegators. Included in this is an element self-regulation by validators.
  
 ``` golang
 type CandidateBond struct {
-	Candidate           crypto.PubKey
-	Owner               sdk.Actor 
-    	Tickets             uint64    
+	    Candidate           crypto.PubKey
+	    Owner               sdk.Actor 
+    	Shares              uint64    
     	HoldCoins           uint64  
     	HoldAccount         sdk.Actor 
     	VotingPower         uint64   
@@ -161,8 +185,8 @@ Candidate. Now `TxBond` is only used by delegators.
 ``` golang
 type TxDeclareCandidacy struct {
 	BondUpdate
-	Commission 	    uint64  
-	CommissionMax 	    uint64 
+	Commission          uint64  
+	CommissionMax       uint64 
 	CommissionMaxChange uint64 
 }
 ```
