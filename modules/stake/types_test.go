@@ -26,7 +26,7 @@ func bondsFromActors(actors []sdk.Actor, amts []int) (bonds []*Candidate) {
 		bonds = append(bonds, &Candidate{
 			PubKey:      newPubKey("foobar"),
 			Owner:       a,
-			Tickets:     uint64(amts[i]),
+			Shares:     uint64(amts[i]),
 			VotingPower: uint64(amts[i]),
 		})
 	}
@@ -107,9 +107,9 @@ func TestCandidatesUpdate(t *testing.T) {
 	params.MaxVals = maxVals
 	saveParams(store, params)
 
-	// Change some of the bonded tickets, get the new validator set
+	// Change some of the bonded shares, get the new validator set
 	vals1 := bonds.GetValidators(store)
-	bonds[2].Tickets = 1000
+	bonds[2].Shares = 1000
 	bonds.UpdateVotingPower(store)
 	vals2 := bonds.GetValidators(store)
 

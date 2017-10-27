@@ -30,19 +30,60 @@ func defaultTransferFn(ctx sdk.Context, store state.SimpleDB, dispatch sdk.Deliv
 // nolint
 const (
 	// Keys for store prefixes
-	CandidateKey      = iota
-	CandidatesListKey = iota
-	DelegatorBondKey
-	DelegatorBondsListKey
+	CandidateKeyPrefix = iota
+	CandidateListKey
+	DelegatorBondKeyPrefix
+	DelegatorBondListKey
 	ParamKey
 )
 
-// LoadCandidates - loads the pubKey bond set
+func getDelegatorBondKey(delegator sdk.Actor, candidate crypto.PubKey) []byte {
+	bondBytes := append(wire.BinaryBytes(&delegator), candidate.Bytes()...)
+	return append([]byte{DelegatorBondKeyPrefix}, bondBytes...)
+}
+
+func getCandidateKey(pubkey crypto.PubKey) []byte {
+	return append([]byte{DelegatorBondKeyPrefix}, candidate.Bytes()...)
+}
+
+/////////////////////////////////////////////////////////////////////////////////
+
+func loadAllCandidates(store state.SimpleDB,
+	delegator sdk.Actor) (candidates []crypto.PubKey) {
+
+	bytes := store.Get([]byte{CandidateListKey})
+	if bytes == nil {
+		return
+	}
+
+	err := wire.ReadBinaryBytes(bytes, &candidates)
+	if err != nil {
+		panic(err)
+	}
+	return
+}
+
+func loadAllCandidateOwners(store state.SimpleDB,
+	delegator sdk.Actor) (candidates []crypto.PubKey) {
+
+	bytes := store.Get([]byte{CandidateListKey})
+	if bytes == nil {
+		return
+	}
+
+	err := wire.ReadBinaryBytes(bytes, &candidates)
+	if err != nil {
+		panic(err)
+	}
+	return
+}
+
+// LoadCandidate - loads the pubKey bond set
 // TODO ultimately this function should be made unexported... being used right now
 // for patchwork of tick functionality therefor much easier if exported until
 // the new SDK is created
-func LoadCandidates(store state.SimpleDB) (candidates Candidates) {
-	b := store.Get([]byte{CandidateKey})
+func LoadCandidate(store state.SimpleDB, pubKey crypto.PubKey) (candidate Candidate) {
+	b := store.Get([]byte{CandidateListKey})
 	if b == nil {
 		return
 	}
@@ -53,18 +94,33 @@ func LoadCandidates(store state.SimpleDB) (candidates Candidates) {
 	return
 }
 
-func saveCandidates(store state.SimpleDB, candidates Candidates) {
-	b := wire.BinaryBytes(candidates)
-	store.Set([]byte{CandidateKey}, b)
+func saveCandidate(store state.SimpleDB, candidate Candidate) {
+	b := wire.BinaryBytes(candidate)
+	store.Set([]byte{CandidateKeyPrefix}, b)
+}
+
+func removeCandidate(store state.SimpleDB, pubKey crypto.PubKey) {
+	store.Remove(getCandidateKey(delegator, pubKey))
 }
 
 /////////////////////////////////////////////////////////////////////////////////
 
-func getDelegatorBondKey(delegator sdk.Actor, candidate crypto.PubKey) []byte {
-	bondBytes := append(wire.BinaryBytes(&delegator), candidate.Bytes()...)
-	return append([]byte{DelegatorBondKey}, bondBytes...)
+func loadDelegatorCandidates(store state.SimpleDB,
+	delegator sdk.Actor) (candidates []crypto.PubKey) {
+
+	bytes := store.Get([]byte{DelegatorBondListKey})
+	if bytes == nil {
+		return
+	}
+
+	err := wire.ReadBinaryBytes(bytes, &candidates)
+	if err != nil {
+		panic(err)
+	}
+	return
 }
 
+//TODO remove
 //func getDelegatorFromKey(key []byte) (delegator sdk.Actor) {
 //err := wire.ReadBinaryBytes(key[1:], &delegator)
 //if err != nil {
@@ -89,28 +145,14 @@ func loadDelegatorBond(store state.SimpleDB,
 	return
 }
 
-func loadDelegatorBonds(store state.SimpleDB,
-	delegator sdk.Actor) (bonds DelegatorBonds) {
-
-	delegatorBytes := store.Get(getDelegatorBondsKey(delegator))
-	if delegatorBytes == nil {
-		return
-	}
-
-	err := wire.ReadBinaryBytes(delegatorBytes, &bonds)
-	if err != nil {
-		panic(err)
-	}
-	return
-}
-
-func saveDelegatorBonds(store state.SimpleDB, delegator sdk.Actor, bonds DelegatorBonds) {
+func saveDelegatorBond(store state.SimpleDB, delegator sdk.Actor, bonds DelegatorBonds,
+	candidate crypto.PubKey) {
 	bondsBytes := wire.BinaryBytes(bonds)
-	store.Set(getDelegatorBondsKey(delegator), bondsBytes)
+	store.Set(getDelegatorBondsKey(delegator, candidate), bondsBytes)
 }
 
-func removeDelegatorBonds(store state.SimpleDB, delegator sdk.Actor) {
-	store.Remove(getDelegatorBondsKey(delegator))
+func removeDelegatorBond(store state.SimpleDB, delegator sdk.Actor, candidate crypto.PubKey) {
+	store.Remove(getDelegatorBondKey(delegator, candidate))
 }
 
 /////////////////////////////////////////////////////////////////////////////////

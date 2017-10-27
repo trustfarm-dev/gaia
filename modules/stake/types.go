@@ -36,17 +36,17 @@ func defaultParams() Params {
 
 //--------------------------------------------------------------------------------
 
-// Candidate defines the total amount of bond tickets and their exchange rate to
+// Candidate defines the total amount of bond shares and their exchange rate to
 // coins, associated with a single validator. Accumulation of interest is modelled
 // as an in increase in the exchange rate, and slashing as a decrease.
 // When coins are delegated to this validator, the validator is credited
-// with a DelegatorBond whose number of bond tickets is based on the amount of coins
+// with a DelegatorBond whose number of bond shares is based on the amount of coins
 // delegated divided by the current exchange rate. Voting power can be calculated as
 // total bonds multiplied by exchange rate.
 type Candidate struct {
 	PubKey      crypto.PubKey // Pubkey of validator
 	Owner       sdk.Actor     // Sender of BondTx - UnbondTx returns here
-	Tickets     uint64        // Total number of bond tickets for the validator, equivalent to coins held in bond account
+	Shares     uint64        // Total number of bond shares for the validator, equivalent to coins held in bond account
 	VotingPower uint64        // Voting power if pubKey is a considered a validator
 	Delegators  []sdk.Actor   // List of all delegators to this Candidate
 }
@@ -56,7 +56,7 @@ func NewCandidate(owner sdk.Actor, pubKey crypto.PubKey) *Candidate {
 	return &Candidate{
 		Owner:       owner,
 		PubKey:      pubKey,
-		Tickets:     0,
+		Shares:     0,
 		VotingPower: 0,
 		Delegators:  []sdk.Actor{}, // start empty
 	}
@@ -121,12 +121,12 @@ func (cs Candidates) Sort() {
 	sort.Sort(cs)
 }
 
-// UpdateVotingPower - voting power based on bond tickets and exchange rate
+// UpdateVotingPower - voting power based on bond shares and exchange rate
 // TODO make not a function of Candidates as Candidates can be loaded from the store
 func (cs Candidates) UpdateVotingPower(store state.SimpleDB) {
 
 	for _, c := range cs {
-		c.VotingPower = c.Tickets
+		c.VotingPower = c.Shares
 	}
 
 	// Now sort and truncate the power
@@ -143,7 +143,7 @@ func (cs Candidates) UpdateVotingPower(store state.SimpleDB) {
 // CleanupEmpty - removes all validators which have no bonded atoms left
 func (cs Candidates) CleanupEmpty(store state.SimpleDB) {
 	for i, c := range cs {
-		if c.Tickets == 0 {
+		if c.Shares == 0 {
 			var err error
 			cs, err = cs.Remove(i)
 			if err != nil {
@@ -268,7 +268,7 @@ func (cs Candidates) Remove(i int) (Candidates, error) {
 // It is owned by one delegator, and is associated with the voting power of one pubKey.
 type DelegatorBond struct {
 	PubKey  crypto.PubKey
-	Tickets uint64
+	Shares uint64
 }
 
 // DelegatorBonds - all delegator bonds existing with multiple delegatees

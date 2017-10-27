@@ -21,7 +21,7 @@ func TestState(t *testing.T) {
 		&Candidate{
 			Owner:      validator1,
 			PubKey:     crypto.PubKey{},
-			Tickets:    9,
+			Shares:    9,
 			Delegators: sdk.Actors{},
 		}}
 	var validatorNilBonds Candidates
@@ -39,7 +39,7 @@ func TestState(t *testing.T) {
 	assert.Equal(candidates, resGet)
 
 	//modify a records, save, and retrieve
-	candidates[0].Tickets = 99
+	candidates[0].Shares = 99
 	saveCandidates(store, candidates)
 	resGet = LoadCandidates(store)
 	assert.Equal(candidates, resGet)

@@ -21,7 +21,7 @@ var (
 	resBondNotNominated      = abci.ErrBaseInvalidOutput.AppendLog("Cannot bond to non-nominated account")
 	resNoCandidateForAddress = abci.ErrBaseUnknownAddress.AppendLog("Validator does not exist for that address")
 	resNoDelegatorForAddress = abci.ErrBaseInvalidInput.AppendLog("Delegator does not contain validator bond")
-	resInsufficientFunds     = abci.ErrBaseInsufficientFunds.AppendLog("Insufficient bond tickets")
+	resInsufficientFunds     = abci.ErrBaseInsufficientFunds.AppendLog("Insufficient bond shares")
 	resBadRemoveValidator    = abci.ErrInternalError.AppendLog("Error removing validator")
 
 	invalidInput = abci.CodeType_BaseInvalidInput

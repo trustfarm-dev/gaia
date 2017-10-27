@@ -108,7 +108,7 @@ func TestIncrementsTxBond(t *testing.T) {
 		candidates := LoadCandidates(store)
 		expectedBond += bondAmount
 		expectedSender := initSender - expectedBond
-		gotBonded := int64(candidates[0].Tickets)
+		gotBonded := int64(candidates[0].Shares)
 		gotHolder := accStore[string(holder.Address)]
 		gotSender := accStore[string(sender.Address)]
 		assert.Equal(expectedBond, gotBonded, "%v, %v", expectedBond, gotBonded)
@@ -143,7 +143,7 @@ func TestIncrementsTxUnbond(t *testing.T) {
 		candidates := LoadCandidates(store)
 		expectedBond := initBond - int64(i+1)*unbondAmount // +1 since we send 1 at the start of loop
 		expectedSender := initSender + (initBond - expectedBond)
-		gotBonded := int64(candidates[0].Tickets)
+		gotBonded := int64(candidates[0].Shares)
 		gotHolder := accStore[string(holder.Address)]
 		gotSender := accStore[string(sender.Address)]
 
@@ -172,7 +172,7 @@ func TestMultipleTxDeclareCandidacy(t *testing.T) {
 		val := candidates[i]
 		balanceGot, balanceExpd := accStore[string(val.Owner.Address)], initSender-10
 		assert.Equal(i+1, len(candidates), "expected %d candidates got %d", i+1, len(candidates))
-		assert.Equal(10, int(val.Tickets), "expected %d tickets, got %d", 10, val.Tickets)
+		assert.Equal(10, int(val.Shares), "expected %d shares, got %d", 10, val.Shares)
 		assert.Equal(balanceExpd, balanceGot, "expected account to have %d, got %d", balanceExpd, balanceGot)
 	}
 
@@ -189,7 +189,7 @@ func TestMultipleTxDeclareCandidacy(t *testing.T) {
 		candidates = LoadCandidates(store)
 		balanceGot, balanceExpd := accStore[string(candidate.Owner.Address)], initSender
 		assert.Equal(len(senders)-(i+1), len(candidates), "expected %d candidates got %d", len(senders)-(i+1), len(candidates))
-		assert.Equal(0, int(candidate.Tickets), "expected %d tickets, got %d", 0, candidate.Tickets)
+		assert.Equal(0, int(candidate.Shares), "expected %d shares, got %d", 0, candidate.Shares)
 		assert.Equal(balanceExpd, balanceGot, "expected account to have %d, got %d", balanceExpd, balanceGot)
 	}
 }
