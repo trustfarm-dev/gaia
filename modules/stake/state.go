@@ -2,117 +2,114 @@ package stake
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk"
-	"github.com/cosmos/cosmos-sdk/modules/coin"
 	"github.com/cosmos/cosmos-sdk/state"
-	abci "github.com/tendermint/abci/types"
 	crypto "github.com/tendermint/go-crypto"
 	"github.com/tendermint/go-wire"
 )
 
-// transfer coins
-type transferFn func(from sdk.Actor, to sdk.Actor, coins coin.Coins) abci.Result
-
-// default transfer runs full DeliverTX
-func defaultTransferFn(ctx sdk.Context, store state.SimpleDB, dispatch sdk.Deliver) transferFn {
-	return func(sender, receiver sdk.Actor, coins coin.Coins) (res abci.Result) {
-		// Move coins from the delegator account to the pubKey lock account
-		send := coin.NewSendOneTx(sender, receiver, coins)
-
-		// If the deduction fails (too high), abort the command
-		_, err := dispatch.DeliverTx(ctx, store, send)
-		if err != nil {
-			return abci.ErrInsufficientFunds.AppendLog(err.Error())
-		}
-		return
-	}
-}
-
 // nolint
-const (
+var (
 	// Keys for store prefixes
-	CandidateKeyPrefix = iota
-	CandidateListKey
-	DelegatorBondKeyPrefix
-	DelegatorBondListKey
-	ParamKey
+	CandidateKeyPrefix           = []byte{0x00} // prefix for each key to a candidate
+	CandidateDelegatorsKeyPrefix = []byte{0x01} // XXX prefix for each key for all the delegators to a single candidate
+	CandidatesPubKeysKey         = []byte{0x02} // key for all candidates' pubkeys
+	DelegatorBondKeyPrefix       = []byte{0x03} // prefix for each key to a delegator's bond
+	DelegatorCandidatesKeyPrefix = []byte{0x04} // XXX uses a prefix now key for the set of all bonds for a delegator
+	ParamKey                     = []byte{0x05} // key for global parameters relating to staking
 )
 
 func getDelegatorBondKey(delegator sdk.Actor, candidate crypto.PubKey) []byte {
 	bondBytes := append(wire.BinaryBytes(&delegator), candidate.Bytes()...)
-	return append([]byte{DelegatorBondKeyPrefix}, bondBytes...)
+	return append(DelegatorBondKeyPrefix, bondBytes...)
 }
 
 func getCandidateKey(pubkey crypto.PubKey) []byte {
-	return append([]byte{DelegatorBondKeyPrefix}, candidate.Bytes()...)
+	return append(DelegatorBondKeyPrefix, candidate.Bytes()...)
 }
 
 /////////////////////////////////////////////////////////////////////////////////
 
-func loadAllCandidates(store state.SimpleDB,
-	delegator sdk.Actor) (candidates []crypto.PubKey) {
-
-	bytes := store.Get([]byte{CandidateListKey})
+// Get the active list of all the candidate pubKeys and owners
+func loadCandidatesPubKeys(store state.SimpleDB) (pubKeys map[crypto.PubKey]struct{}) {
+	bytes := store.Get(CandidateListKey)
 	if bytes == nil {
 		return
 	}
-
-	err := wire.ReadBinaryBytes(bytes, &candidates)
+	err := wire.ReadBinaryBytes(bytes, &pubKeys)
 	if err != nil {
 		panic(err)
 	}
 	return
 }
 
-func loadAllCandidateOwners(store state.SimpleDB,
-	delegator sdk.Actor) (candidates []crypto.PubKey) {
-
-	bytes := store.Get([]byte{CandidateListKey})
-	if bytes == nil {
-		return
-	}
-
-	err := wire.ReadBinaryBytes(bytes, &candidates)
-	if err != nil {
-		panic(err)
-	}
-	return
+// Get the active list of all the candidate pubKeys and owners
+func saveCandidatesPubKeys(store state.SimpleDB, pubKeys map[crypto.PubKey]struct{}) {
+	b := wire.BinaryBytes(pubKeys)
+	store.Set(CandidateListKey, b)
 }
 
 // LoadCandidate - loads the pubKey bond set
 // TODO ultimately this function should be made unexported... being used right now
 // for patchwork of tick functionality therefor much easier if exported until
 // the new SDK is created
-func LoadCandidate(store state.SimpleDB, pubKey crypto.PubKey) (candidate Candidate) {
-	b := store.Get([]byte{CandidateListKey})
+func LoadCandidate(store state.SimpleDB, pubKey crypto.PubKey) (candidate *Candidate) {
+	b := store.Get(CandidateListKey)
 	if b == nil {
 		return
 	}
-	err := wire.ReadBinaryBytes(b, &candidates)
+	err := wire.ReadBinaryBytes(b, candidates)
 	if err != nil {
 		panic(err) // This error should never occure big problem if does
 	}
 	return
 }
 
-func saveCandidate(store state.SimpleDB, candidate Candidate) {
-	b := wire.BinaryBytes(candidate)
-	store.Set([]byte{CandidateKeyPrefix}, b)
+func saveCandidate(store state.SimpleDB, candidate *Candidate) {
+	b := wire.BinaryBytes(*candidate)
+	store.Set(CandidateKeyPrefix, b)
+
+	// TODO to be replaced with iteration in the multistore?
+	pks := loadCandidatePubKeys(store)
+	pks[candidate.PubKey] = struct{}{} //set the key in the map of all candidates
+	saveCandidatePubKeys(store, pks)
 }
 
 func removeCandidate(store state.SimpleDB, pubKey crypto.PubKey) {
 	store.Remove(getCandidateKey(delegator, pubKey))
+
+	// TODO to be replaced with iteration in the multistore?
+	pks := loadCandidatesPubKeys(store)
+	delete(pks, pubKey)
+	saveCandidatePubKeys(store, pks)
 }
 
 /////////////////////////////////////////////////////////////////////////////////
 
-func loadDelegatorCandidates(store state.SimpleDB,
-	delegator sdk.Actor) (candidates []crypto.PubKey) {
+// Get the active list of all delegators to a single candidate
+func loadCandidateDelegators(store state.SimpleDB,
+	pubKey crypto.PubKey) (delegators map[sdk.Actor]struct{}) {
 
-	bytes := store.Get([]byte{DelegatorBondListKey})
+	bytes := store.Get(CandidateDelegatorsKey)
 	if bytes == nil {
 		return
 	}
+	err := wire.ReadBinaryBytes(bytes, &delegators)
+	if err != nil {
+		panic(err)
+	}
+	return
+}
+func saveCandidateDelegators(store state.SimpleDB, pubKeys map[crypto.PubKey]struct{}) {
+	b := wire.BinaryBytes(pubKeys)
+	store.Set(CandidateListKey, b)
+}
+func loadDelegatorCandidates(store state.SimpleDB,
+	delegator sdk.Actor) (candidates map[crypto.PubKey]struct{}) {
 
+	bytes := store.Get(DelegatorBondListKey)
+	if bytes == nil {
+		return
+	}
 	err := wire.ReadBinaryBytes(bytes, &candidates)
 	if err != nil {
 		panic(err)
@@ -120,46 +117,52 @@ func loadDelegatorCandidates(store state.SimpleDB,
 	return
 }
 
-//TODO remove
-//func getDelegatorFromKey(key []byte) (delegator sdk.Actor) {
-//err := wire.ReadBinaryBytes(key[1:], &delegator)
-//if err != nil {
-//panic(fmt.Sprintf("%v", key))
-//panic(err)
-//}
-//return
-//}
-
 func loadDelegatorBond(store state.SimpleDB,
-	delegator sdk.Actor, candidate crypto.PubKey) (bond DelegatorBond) {
+	delegator sdk.Actor, candidate crypto.PubKey) (bond *DelegatorBond) {
 
 	delegatorBytes := store.Get(getDelegatorBondKey(delegator, candidate))
 	if delegatorBytes == nil {
 		return
 	}
 
-	err := wire.ReadBinaryBytes(delegatorBytes, &bond)
+	err := wire.ReadBinaryBytes(delegatorBytes, bond)
 	if err != nil {
 		panic(err)
 	}
 	return
 }
 
-func saveDelegatorBond(store state.SimpleDB, delegator sdk.Actor, bonds DelegatorBonds,
-	candidate crypto.PubKey) {
-	bondsBytes := wire.BinaryBytes(bonds)
-	store.Set(getDelegatorBondsKey(delegator, candidate), bondsBytes)
+func saveDelegatorBond(store state.SimpleDB, delegator sdk.Actor, bond DelegatorBond) {
+
+	//if a new record also add to the list of all delegated candidates for this delegator
+	if len(store.Get(loadDelegatorBond(store, delegator, bond.PubKey))) > 0 {
+		dcs := loadDelegatorCandidates(store, delegator)
+		store.Set(DelegatorCandidatesKey, append(dcs, bond.PubKey))
+
+		cds := store.loadCandidateDelegators(store, bond.PubKey)
+		store.Set(DelegatorCandidatesKey, append(cds, delegator))
+	}
+
+	b := wire.BinaryBytes(bond)
+	store.Set(getDelegatorBondsKey(delegator, bond.PubKey), b)
 }
 
 func removeDelegatorBond(store state.SimpleDB, delegator sdk.Actor, candidate crypto.PubKey) {
 	store.Remove(getDelegatorBondKey(delegator, candidate))
+
+	// TODO to be replaced with iteration in the multistore
+	dcs := loadDelegatorCandidates(store, delegator)
+	store.Set(DelegatorCandidatesKey, append(dcs, bond.PubKey))
+
+	cds := loadCandidateDelegators(store, bond.PubKey)
+	store.set(getDelegatorBondKey(delegator, candidate))
 }
 
 /////////////////////////////////////////////////////////////////////////////////
 
 // load/save the global staking params
 func loadParams(store state.SimpleDB) (params Params) {
-	b := store.Get([]byte{ParamKey})
+	b := store.Get(ParamKey)
 	if b == nil {
 		return defaultParams()
 	}
@@ -171,5 +174,5 @@ func loadParams(store state.SimpleDB) (params Params) {
 }
 func saveParams(store state.SimpleDB, params Params) {
 	b := wire.BinaryBytes(params)
-	store.Set([]byte{ParamKey}, b)
+	store.Set(ParamKey, b)
 }

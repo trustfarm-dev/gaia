@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/cosmos/cosmos-sdk"
+	"github.com/cosmos/cosmos-sdk/modules/coin"
 	"github.com/cosmos/cosmos-sdk/state"
 	abci "github.com/tendermint/abci/types"
 	crypto "github.com/tendermint/go-crypto"
@@ -46,7 +47,7 @@ func defaultParams() Params {
 type Candidate struct {
 	PubKey      crypto.PubKey // Pubkey of validator
 	Owner       sdk.Actor     // Sender of BondTx - UnbondTx returns here
-	Shares     uint64        // Total number of bond shares for the validator, equivalent to coins held in bond account
+	Shares      uint64        // Total number of bond shares for the validator, equivalent to coins held in bond account
 	VotingPower uint64        // Voting power if pubKey is a considered a validator
 	Delegators  []sdk.Actor   // List of all delegators to this Candidate
 }
@@ -56,7 +57,7 @@ func NewCandidate(owner sdk.Actor, pubKey crypto.PubKey) *Candidate {
 	return &Candidate{
 		Owner:       owner,
 		PubKey:      pubKey,
-		Shares:     0,
+		Shares:      0,
 		VotingPower: 0,
 		Delegators:  []sdk.Actor{}, // start empty
 	}
@@ -267,7 +268,7 @@ func (cs Candidates) Remove(i int) (Candidates, error) {
 // DelegatorBond represents some bond tokens held by an account.
 // It is owned by one delegator, and is associated with the voting power of one pubKey.
 type DelegatorBond struct {
-	PubKey  crypto.PubKey
+	PubKey crypto.PubKey
 	Shares uint64
 }
 
@@ -293,5 +294,25 @@ func (dbs DelegatorBonds) Remove(i int) (DelegatorBonds, error) {
 		return dbs, fmt.Errorf("Element is out of upper bound")
 	default:
 		return append(dbs[:i], dbs[i+1:]...), nil
+	}
+}
+
+//--------------------------------------------------------------------------------
+
+// transfer coins
+type transferFn func(from sdk.Actor, to sdk.Actor, coins coin.Coins) abci.Result
+
+// default transfer runs full DeliverTX
+func defaultTransferFn(ctx sdk.Context, store state.SimpleDB, dispatch sdk.Deliver) transferFn {
+	return func(sender, receiver sdk.Actor, coins coin.Coins) (res abci.Result) {
+		// Move coins from the delegator account to the pubKey lock account
+		send := coin.NewSendOneTx(sender, receiver, coins)
+
+		// If the deduction fails (too high), abort the command
+		_, err := dispatch.DeliverTx(ctx, store, send)
+		if err != nil {
+			return abci.ErrInsufficientFunds.AppendLog(err.Error())
+		}
+		return
 	}
 }
