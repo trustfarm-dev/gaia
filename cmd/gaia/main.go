@@ -43,7 +43,6 @@ func getTickFnc() func(store state.SimpleDB) (diffVal []*abci.Validator, err err
 		candidates.UpdateVotingPower(store)
 		newVal := candidates.GetValidators(store)
 		diffVal = stake.ValidatorsDiff(startVal, newVal, store)
-		candidates.CleanupEmpty(store)
 
 		return
 	}

@@ -278,26 +278,8 @@ func runTxUnbond(store state.SimpleDB, sender sdk.Actor,
 	bond.Shares -= uint64(tx.Bond.Amount)
 
 	if bond.Shares == 0 {
-		//begin to unbond all of the tokens if the validator unbonds their last token
-		if sender.Equals(candidate.Owner) {
-			//remove from list of delegators in the candidate
-			candidate.Delegators = candidate.RemoveDelegator(sender)
-
-			//remove bond from delegator's list
-			removeDelegatorBond(store, sender, tx.PubKey)
-
-			//panic(fmt.Sprintf("debug panic: %v\n", loadDelegatorBonds(store, candidate.Owner)))
-			res = fullyUnbondPubKey(candidate, store, transferFn)
-			if res.IsErr() {
-				return res //TODO add more context to this error?
-			}
-		} else {
-			//remove from list of delegators in the candidate
-			candidate.Delegators = candidate.RemoveDelegator(sender)
-
-			//remove bond from delegator's list
-			removeDelegatorBond(store, sender, tx.PubKey)
-		}
+		//remove the bond
+		removeDelegatorBond(store, sender, tx.PubKey)
 	} else {
 		saveDelegatorBond(store, sender, *bond)
 	}
@@ -313,32 +295,6 @@ func runTxUnbond(store state.SimpleDB, sender sdk.Actor,
 	}
 	saveCandidate(store, candidate)
 
-	return abci.OK
-}
-
-//TODO improve efficiency of this function
-func fullyUnbondPubKey(candidate *Candidate, store state.SimpleDB, transferFn transferFn) (res abci.Result) {
-
-	// get global params
-	params := loadParams(store)
-	//maxVals := params.MaxVals
-	bondDenom := params.AllowedBondDenom
-
-
-	for _, delegator := range delegators {
-
-		 := loadDelegatorBonds(store, delegator)
-		for _, bond := range bonds {
-			if bond.PubKey.Equals(candidate.PubKey) {
-				txUnbond := TxUnbond{BondUpdate{candidate.PubKey,
-					coin.Coin{bondDenom, int64(bond.Shares)}}}
-				res = runTxUnbond(store, delegator, transferFn, txUnbond)
-				if res.IsErr() {
-					return res
-				}
-			}
-		}
-	}
 	return abci.OK
 }
 

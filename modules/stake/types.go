@@ -2,7 +2,6 @@ package stake
 
 import (
 	"bytes"
-	"fmt"
 	"sort"
 
 	"github.com/cosmos/cosmos-sdk"
@@ -82,22 +81,23 @@ func getHoldAccount(owner sdk.Actor) sdk.Actor {
 	return sdk.NewActor(stakingModuleName, holdAddr)
 }
 
-// RemoveDelegator - remove a delegator from the list of delegators
-func (c Candidate) RemoveDelegator(delegator sdk.Actor) (delegators []sdk.Actor) {
-	for i := range c.Delegators {
-		if c.Delegators[i].Equals(delegator) {
-			return append(c.Delegators[:i], c.Delegators[i+1:]...)
-		}
-	}
-	return c.Delegators
-}
-
 //--------------------------------------------------------------------------------
 
-// Candidates - the set of all Candidates
+// TODO replace with sorted multistore functionality
+
+// Candidates - list of Candidates
 type Candidates []*Candidate
 
 var _ sort.Interface = Candidates{} //enforce the sort interface at compile time
+
+// LoadCandidates - TODO replace with  multistore
+func LoadCandidates(store state.SimpleDB) (candidates Candidates) {
+	pks := loadCandidatesPubKeys(store)
+	for _, pk := range pks {
+		candidates = append(candidates, LoadCandidate(store, pk))
+	}
+	return
+}
 
 // nolint - sort interface functions
 func (cs Candidates) Len() int      { return len(cs) }
@@ -122,10 +122,10 @@ func (cs Candidates) Sort() {
 	sort.Sort(cs)
 }
 
-// UpdateVotingPower - voting power based on bond shares and exchange rate
-// TODO make not a function of Candidates as Candidates can be loaded from the store
-func (cs Candidates) UpdateVotingPower(store state.SimpleDB) {
+//--------------------------------------------------------------------------------
 
+// UpdateVotingPower - voting power based on bond shares and exchange rate
+func (cs Candidates) UpdateVotingPower(store state.SimpleDB) {
 	for _, c := range cs {
 		c.VotingPower = c.Shares
 	}
@@ -136,32 +136,18 @@ func (cs Candidates) UpdateVotingPower(store state.SimpleDB) {
 		if i >= loadParams(store).MaxVals {
 			c.VotingPower = 0
 		}
+		saveCandidate(store, c)
 	}
-	saveCandidates(store, cs)
 	return
-}
-
-// CleanupEmpty - removes all validators which have no bonded atoms left
-func (cs Candidates) CleanupEmpty(store state.SimpleDB) {
-	for i, c := range cs {
-		if c.Shares == 0 {
-			var err error
-			cs, err = cs.Remove(i)
-			if err != nil {
-				cmn.PanicSanity(resBadRemoveValidator.Error())
-			}
-		}
-	}
-	saveCandidates(store, cs)
 }
 
 // GetValidators - get the most recent updated validator set from the
 // Candidates. These bonds are already sorted by VotingPower from
 // the UpdateVotingPower function which is the only function which
 // is to modify the VotingPower
-func (cs Candidates) GetValidators(store state.SimpleDB) []*abci.Validator {
+func (cs Candidates) GetValidators(store state.SimpleDB) Candidates {
 	maxVals := loadParams(store).MaxVals
-	validators := make([]*abci.Validator, cmn.MinInt(len(cs), maxVals))
+	validators := make(Candidates, cmn.MinInt(len(cs), maxVals))
 	for i, c := range cs {
 		if c.VotingPower == 0 { //exit as soon as the first Voting power set to zero is found
 			break
@@ -169,13 +155,13 @@ func (cs Candidates) GetValidators(store state.SimpleDB) []*abci.Validator {
 		if i >= maxVals {
 			return validators
 		}
-		validators[i] = c.ABCIValidator()
+		validators[i] = c
 	}
 	return validators
 }
 
 // ValidatorsDiff - get the difference in the validator set from the input validator set
-func ValidatorsDiff(previous, current []*abci.Validator, store state.SimpleDB) (diff []*abci.Validator) {
+func ValidatorsDiff(previous, current Candidates, store state.SimpleDB) (diff []*abci.Validator) {
 
 	//TODO do something more efficient possibly by sorting first
 
@@ -185,82 +171,32 @@ func ValidatorsDiff(previous, current []*abci.Validator, store state.SimpleDB) (
 	diff = make([]*abci.Validator, 0, loadParams(store).MaxVals)
 
 	for _, prevVal := range previous {
+		abciVal := prevVal.ABCIValidator()
 		if prevVal == nil {
 			continue
 		}
 		found := false
-		for _, curVal := range current {
-			if curVal == nil {
-				continue
-			}
-			if bytes.Equal(prevVal.PubKey, curVal.PubKey) {
-				found = true
-				if curVal.Power != prevVal.Power {
-					diff = append(diff, &abci.Validator{curVal.PubKey, curVal.Power})
-					break
-				}
+		candidate := LoadCandidate(store, prevVal.PubKey)
+		if candidate != nil {
+			found = true
+			if candidate.VotingPower != prevVal.VotingPower {
+				diff = append(diff, &abci.Validator{abciVal.PubKey, candidate.VotingPower})
 			}
 		}
 		if !found {
-			diff = append(diff, &abci.Validator{prevVal.PubKey, 0})
+			diff = append(diff, &abci.Validator{abciVal.PubKey, 0})
 		}
 	}
 	for _, curVal := range current {
 		if curVal == nil {
 			continue
 		}
-		found := false
-		for _, prevVal := range previous {
-			if prevVal == nil {
-				continue
-			}
-			if bytes.Equal(prevVal.PubKey, curVal.PubKey) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			diff = append(diff, &abci.Validator{curVal.PubKey, curVal.Power})
+		candidate := LoadCandidate(store, curVal.PubKey)
+		if candidate == nil {
+			diff = append(diff, curVal.ABCIValidator())
 		}
 	}
 	return
-}
-
-// GetByOwner - get a Candidate for a specific sender from the Candidates
-func (cs Candidates) GetByOwner(owner sdk.Actor) (int, *Candidate) {
-	for i, c := range cs {
-		if c.Owner.Equals(owner) {
-			return i, c
-		}
-	}
-	return 0, nil
-}
-
-// GetByPubKey - get a Candidate for a specific validator from the Candidates
-func (cs Candidates) GetByPubKey(pubkey crypto.PubKey) (int, *Candidate) {
-	for i, c := range cs {
-		if c.PubKey.Equals(pubkey) {
-			return i, c
-		}
-	}
-	return 0, nil
-}
-
-// Add - adds a Candidate
-func (cs Candidates) Add(bond *Candidate) Candidates {
-	return append(cs, bond)
-}
-
-// Remove - remove validator from the validator list
-func (cs Candidates) Remove(i int) (Candidates, error) {
-	switch {
-	case i < 0:
-		return cs, fmt.Errorf("Cannot remove a negative element")
-	case i >= len(cs):
-		return cs, fmt.Errorf("Element is out of upper bound")
-	default:
-		return append(cs[:i], cs[i+1:]...), nil
-	}
 }
 
 //--------------------------------------------------------------------------------
@@ -270,31 +206,6 @@ func (cs Candidates) Remove(i int) (Candidates, error) {
 type DelegatorBond struct {
 	PubKey crypto.PubKey
 	Shares uint64
-}
-
-// DelegatorBonds - all delegator bonds existing with multiple delegatees
-type DelegatorBonds []*DelegatorBond
-
-// Get - get a DelegateeBond for a specific validator from the DelegateeBonds
-func (dbs DelegatorBonds) Get(pubKey crypto.PubKey) (int, *DelegatorBond) {
-	for i, db := range dbs {
-		if db.PubKey.Equals(pubKey) {
-			return i, db
-		}
-	}
-	return 0, nil
-}
-
-// Remove - remove pubKey from the pubKey list
-func (dbs DelegatorBonds) Remove(i int) (DelegatorBonds, error) {
-	switch {
-	case i < 0:
-		return dbs, fmt.Errorf("Cannot remove a negative element")
-	case i >= len(dbs):
-		return dbs, fmt.Errorf("Element is out of upper bound")
-	default:
-		return append(dbs[:i], dbs[i+1:]...), nil
-	}
 }
 
 //--------------------------------------------------------------------------------

@@ -47,7 +47,8 @@ func main() {
 		ibccmd.IBCQueryCmd,
 
 		//stakecmd.CmdQueryValidator,
-		stakecmd.CmdQueryValidators,
+		stakecmd.CmdQueryCandidates,
+		stakecmd.CmdQueryCandidate,
 	)
 
 	// set up the middleware
